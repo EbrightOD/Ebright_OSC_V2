@@ -1,0 +1,24 @@
+import { listBranches, listDepartments } from "@/lib/employeeQueries";
+import RegisterForm from "@/app/components/RegisterForm";
+
+export const dynamic = "force-dynamic";
+
+export default async function RegisterPage() {
+  const [branches, departments] = await Promise.all([listBranches(), listDepartments()]);
+
+  return (
+    <div className="min-h-screen flex items-center justify-center relative overflow-hidden py-12">
+      <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
+        <div className="absolute inset-0 opacity-30">
+          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500 rounded-full mix-blend-multiply filter blur-3xl animate-pulse"></div>
+          <div className="absolute top-1/3 right-1/4 w-96 h-96 bg-cyan-500 rounded-full mix-blend-multiply filter blur-3xl animate-pulse" style={{ animationDelay: "1s" }}></div>
+          <div className="absolute bottom-1/4 left-1/3 w-96 h-96 bg-indigo-500 rounded-full mix-blend-multiply filter blur-3xl animate-pulse" style={{ animationDelay: "2s" }}></div>
+        </div>
+      </div>
+
+      <div className="relative z-10 w-full flex justify-center">
+        <RegisterForm branches={branches} departments={departments} />
+      </div>
+    </div>
+  );
+}
