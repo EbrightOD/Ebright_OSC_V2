@@ -55,14 +55,40 @@ export default function NotificationBell({ role }: { role?: string }) {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={count > 0 ? `Notifications: ${count} pending` : "Notifications"}
-        className="relative p-2 rounded-lg text-slate-800 hover:bg-slate-100 hover:text-slate-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+        className={`relative inline-flex items-center justify-center w-10 h-10 rounded-full transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
+          open ? "bg-slate-100" : "hover:bg-slate-100"
+        }`}
+        style={{ color: "#1e293b" }}
       >
-        <Bell className="w-7 h-7" fill="currentColor" strokeWidth={1.5} aria-hidden="true" />
-        {count > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[20px] h-[20px] px-1 rounded-full bg-red-600 text-white text-[11px] font-bold flex items-center justify-center ring-2 ring-white pointer-events-none">
-            {count > 99 ? "99+" : count}
-          </span>
-        )}
+        <span className="relative inline-flex">
+          <Bell className="w-6 h-6" fill="currentColor" strokeWidth={1.5} aria-hidden="true" />
+          {count > 0 && (
+            <span
+              aria-hidden="true"
+              style={{
+                position: "absolute",
+                top: "-6px",
+                right: "-6px",
+                minWidth: "18px",
+                height: "18px",
+                padding: "0 5px",
+                borderRadius: "9999px",
+                backgroundColor: "#dc2626",
+                color: "#ffffff",
+                fontSize: "10px",
+                fontWeight: 700,
+                lineHeight: 1,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow: "0 0 0 2px #ffffff",
+                pointerEvents: "none",
+              }}
+            >
+              {count > 99 ? "99+" : count}
+            </span>
+          )}
+        </span>
       </button>
 
       {open && (

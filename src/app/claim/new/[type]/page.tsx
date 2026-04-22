@@ -1,14 +1,25 @@
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/nextauth";
 import AppShell from "@/app/components/AppShell";
-import ClaimsView from "@/app/components/ClaimsView";
+import ClaimFormView, {
+  type ClaimFormType,
+} from "@/app/components/ClaimFormView";
 
 export const dynamic = "force-dynamic";
 
-export default async function ClaimsPage() {
+const VALID_TYPES: ClaimFormType[] = ["sales", "health", "transport"];
+
+export default async function NewClaimTypePage({
+  params,
+}: {
+  params: Promise<{ type: string }>;
+}) {
   const session = await getServerSession(authOptions);
   if (!session) redirect("/login");
+
+  const { type } = await params;
+  if (!VALID_TYPES.includes(type as ClaimFormType)) notFound();
 
   const userEmail = session.user?.email ?? "";
   const userRole = (session.user as { role?: string } | undefined)?.role ?? "";
@@ -16,7 +27,7 @@ export default async function ClaimsPage() {
 
   return (
     <AppShell email={userEmail} role={userRole} name={userName}>
-      <ClaimsView />
+      <ClaimFormView type={type as ClaimFormType} />
     </AppShell>
   );
 }

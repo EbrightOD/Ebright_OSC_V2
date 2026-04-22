@@ -2,11 +2,11 @@ import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/nextauth";
 import AppShell from "@/app/components/AppShell";
-import ClaimsView from "@/app/components/ClaimsView";
+import NewClaimView from "@/app/components/NewClaimView";
 
 export const dynamic = "force-dynamic";
 
-export default async function ClaimsPage() {
+export default async function NewClaimPage() {
   const session = await getServerSession(authOptions);
   if (!session) redirect("/login");
 
@@ -16,7 +16,7 @@ export default async function ClaimsPage() {
 
   return (
     <AppShell email={userEmail} role={userRole} name={userName}>
-      <ClaimsView />
+      <NewClaimView />
     </AppShell>
   );
 }
