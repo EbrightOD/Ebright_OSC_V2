@@ -22,16 +22,22 @@ import { deleteEmployee } from "@/app/dashboard-employee-management/actions";
 const ROLE_OPTIONS = ["FT CEO", "FT HOD", "FT EXEC", "BM", "FT COACH", "PT COACH", "INTERN"] as const;
 const STATUS_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "active", label: "Active" },
+  { value: "onboarding", label: "Onboarding" },
   { value: "inactive", label: "Inactive" },
+  { value: "archive", label: "Archive" },
 ];
 
 const STATUS_STYLES: Record<string, string> = {
   active: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
+  onboarding: "bg-amber-50 text-amber-700 ring-amber-600/20",
   inactive: "bg-slate-100 text-slate-600 ring-slate-500/20",
+  archive: "bg-zinc-100 text-zinc-600 ring-zinc-500/20",
 };
 const STATUS_DOT: Record<string, string> = {
   active: "bg-emerald-500",
+  onboarding: "bg-amber-500",
   inactive: "bg-slate-400",
+  archive: "bg-zinc-500",
 };
 
 export interface EmployeeRow {
@@ -124,7 +130,12 @@ export default function EmployeeListView({
     const q = search.trim().toLowerCase();
     return employees.filter((e) => {
       if (role && e.role !== role) return false;
-      if (status && e.status !== status) return false;
+      if (status) {
+        if (e.status !== status) return false;
+      } else if (e.status === "archive") {
+        // Hide archived ('do not hire') employees unless explicitly filtered for.
+        return false;
+      }
       if (orgUnit.startsWith("branch:")) {
         const code = orgUnit.slice("branch:".length);
         if (e.branchCode !== code) return false;
@@ -282,8 +293,23 @@ export default function EmployeeListView({
                           )}
                         </td>
                         <td className="px-6 py-3">
-                          <div className="text-slate-900 font-medium">{e.branchCode ?? e.departmentCode ?? "—"}</div>
-                          <div className="text-xs text-slate-500 truncate">{e.branchName ?? e.departmentName ?? ""}</div>
+                          {e.branchCode === "HQ" ? (
+                            <>
+                              <div className="text-slate-900 font-medium">HQ</div>
+                              <div className="text-xs text-slate-500 truncate">
+                                {e.departmentName ?? e.departmentCode ?? ""}
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="text-slate-900 font-medium">
+                                {e.branchCode ?? e.departmentCode ?? "—"}
+                              </div>
+                              <div className="text-xs text-slate-500 truncate">
+                                {e.branchName ?? e.departmentName ?? ""}
+                              </div>
+                            </>
+                          )}
                         </td>
                         <td className="px-6 py-3">
                           {statusKey ? (

@@ -45,16 +45,13 @@ export async function createEmployee(_: CreateEmployeeResult | null, formData: F
   if (!fullName) return { ok: false, error: "Full Name is required." };
   if (!email) return { ok: false, error: "Email is required." };
 
-  const orgUnit = s(formData, "orgUnit");
-  let branchId: number | null = null;
-  let departmentId: number | null = null;
-  if (orgUnit.startsWith("branch:")) {
-    branchId = parseInt(orgUnit.slice("branch:".length), 10);
-    if (Number.isNaN(branchId)) branchId = null;
-  } else if (orgUnit.startsWith("dept:")) {
-    departmentId = parseInt(orgUnit.slice("dept:".length), 10);
-    if (Number.isNaN(departmentId)) departmentId = null;
-  }
+  // Form sends Branch always; Department only when Branch is HQ.
+  const branchIdRaw = s(formData, "branchId");
+  const departmentIdRaw = s(formData, "departmentId");
+  const branchId = branchIdRaw ? Number.parseInt(branchIdRaw, 10) : NaN;
+  const departmentId = departmentIdRaw ? Number.parseInt(departmentIdRaw, 10) : NaN;
+  const branchIdValue = Number.isFinite(branchId) ? branchId : null;
+  const departmentIdValue = Number.isFinite(departmentId) ? departmentId : null;
 
   const employeeId = s(formData, "employeeId") || null;
   const role = s(formData, "role") || null;
@@ -76,6 +73,7 @@ export async function createEmployee(_: CreateEmployeeResult | null, formData: F
 
   const bankName = s(formData, "bankName") || null;
   const bankAccount = s(formData, "bankAccount") || null;
+  const accountName = s(formData, "accountName") || null;
 
   const emergencyName = s(formData, "emergencyName") || null;
   const emergencyPhone = s(formData, "emergencyPhone") || null;
@@ -118,8 +116,8 @@ export async function createEmployee(_: CreateEmployeeResult | null, formData: F
         data: {
           user_id: user.user_id,
           employee_id: employeeId,
-          branch_id: branchId,
-          department_id: departmentId,
+          branch_id: branchIdValue,
+          department_id: departmentIdValue,
           position: role,
           start_date: startDate,
           end_date: endDate,
@@ -130,12 +128,13 @@ export async function createEmployee(_: CreateEmployeeResult | null, formData: F
         },
       });
 
-      if (bankName || bankAccount) {
+      if (bankName || bankAccount || accountName) {
         await tx.bank_details.create({
           data: {
             user_id: user.user_id,
             bank_name: bankName,
             bank_account: bankAccount,
+            account_name: accountName,
           },
         });
       }
@@ -170,16 +169,13 @@ export async function updateEmployee(_: CreateEmployeeResult | null, formData: F
   if (!fullName) return { ok: false, error: "Full Name is required." };
   if (!email) return { ok: false, error: "Email is required." };
 
-  const orgUnit = s(formData, "orgUnit");
-  let branchId: number | null = null;
-  let departmentId: number | null = null;
-  if (orgUnit.startsWith("branch:")) {
-    branchId = parseInt(orgUnit.slice("branch:".length), 10);
-    if (Number.isNaN(branchId)) branchId = null;
-  } else if (orgUnit.startsWith("dept:")) {
-    departmentId = parseInt(orgUnit.slice("dept:".length), 10);
-    if (Number.isNaN(departmentId)) departmentId = null;
-  }
+  // Form sends Branch always; Department only when Branch is HQ.
+  const branchIdRaw = s(formData, "branchId");
+  const departmentIdRaw = s(formData, "departmentId");
+  const branchId = branchIdRaw ? Number.parseInt(branchIdRaw, 10) : NaN;
+  const departmentId = departmentIdRaw ? Number.parseInt(departmentIdRaw, 10) : NaN;
+  const branchIdValue = Number.isFinite(branchId) ? branchId : null;
+  const departmentIdValue = Number.isFinite(departmentId) ? departmentId : null;
 
   const employeeId = s(formData, "employeeId") || null;
   const role = s(formData, "role") || null;
@@ -201,6 +197,7 @@ export async function updateEmployee(_: CreateEmployeeResult | null, formData: F
 
   const bankName = s(formData, "bankName") || null;
   const bankAccount = s(formData, "bankAccount") || null;
+  const accountName = s(formData, "accountName") || null;
 
   const emergencyName = s(formData, "emergencyName") || null;
   const emergencyPhone = s(formData, "emergencyPhone") || null;
@@ -272,11 +269,11 @@ export async function updateEmployee(_: CreateEmployeeResult | null, formData: F
         probation,
         rate,
       };
-      const branchRel = branchId !== null
-        ? { connect: { branch_id: branchId } }
+      const branchRel = branchIdValue !== null
+        ? { connect: { branch_id: branchIdValue } }
         : { disconnect: true };
-      const departmentRel = departmentId !== null
-        ? { connect: { department_id: departmentId } }
+      const departmentRel = departmentIdValue !== null
+        ? { connect: { department_id: departmentIdValue } }
         : { disconnect: true };
 
       if (existingEmploymentId) {
@@ -286,15 +283,15 @@ export async function updateEmployee(_: CreateEmployeeResult | null, formData: F
         });
       } else {
         await tx.employment.create({
-          data: { user_id: userId, ...empScalars, branch_id: branchId, department_id: departmentId },
+          data: { user_id: userId, ...empScalars, branch_id: branchIdValue, department_id: departmentIdValue },
         });
       }
 
-      if (bankName || bankAccount) {
+      if (bankName || bankAccount || accountName) {
         await tx.bank_details.upsert({
           where: { user_id: userId },
-          create: { user_id: userId, bank_name: bankName, bank_account: bankAccount },
-          update: { bank_name: bankName, bank_account: bankAccount },
+          create: { user_id: userId, bank_name: bankName, bank_account: bankAccount, account_name: accountName },
+          update: { bank_name: bankName, bank_account: bankAccount, account_name: accountName },
         });
       } else {
         await tx.bank_details.deleteMany({ where: { user_id: userId } });

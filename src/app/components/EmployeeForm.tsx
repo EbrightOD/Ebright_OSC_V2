@@ -10,16 +10,55 @@ import type { EmployeeDetailFull } from "@/lib/employeeQueries";
 
 const ROLE_OPTIONS = ["FT CEO", "FT HOD", "FT EXEC", "BM", "FT COACH", "PT COACH", "INTERN"];
 const GENDER_OPTIONS = ["Male", "Female", "Other"];
-const EMPLOYMENT_TYPE_OPTIONS = ["Full-time — Permanent", "Full-time — 24 months", "Full-time — 12 months", "Part-time", "Internship — 6 months", "Contract"];
+const EMPLOYMENT_TYPE_OPTIONS = [
+  "Full time - Permanent",
+  "Part time - 9 months",
+  "Part time - 12 months",
+  "Part time - 15 months",
+  "Part time - 18 months",
+  "Intern - 4 months",
+  "Intern - 5 months",
+  "Intern - 6 months",
+];
+
+// Months derived from each fixed-term contract type. Used to auto-fill End Date
+// from Start Date — user can still override (e.g. uni-set intern dates).
+const CONTRACT_MONTHS: Record<string, number> = {
+  "Part time - 9 months": 9,
+  "Part time - 12 months": 12,
+  "Part time - 15 months": 15,
+  "Part time - 18 months": 18,
+  "Intern - 4 months": 4,
+  "Intern - 5 months": 5,
+  "Intern - 6 months": 6,
+};
+
+function addMonthsIso(startIso: string, months: number): string {
+  const [y, m, d] = startIso.split("-").map(Number);
+  if (!y || !m || !d) return "";
+  const dt = new Date(Date.UTC(y, m - 1 + months, d));
+  return dt.toISOString().slice(0, 10);
+}
 const STATUS_OPTIONS = [
   { value: "active", label: "Active" },
+  { value: "onboarding", label: "Onboarding" },
   { value: "inactive", label: "Inactive" },
+  { value: "archive", label: "Archive" },
 ];
 const BANK_OPTIONS = ["Maybank", "CIMB", "Public Bank", "RHB", "HSBC", "Bank Islam", "AmBank", "Hong Leong Bank"];
 const RELATION_OPTIONS = ["Father", "Mother", "Spouse", "Sibling", "Child", "Relative", "Friend", "Other"];
 
 interface BranchOpt { id: number; code: string; name: string }
 interface DepartmentOpt { id: number; code: string; name: string }
+
+type TabKey = "profile" | "employment" | "bank" | "emergency";
+
+const TABS: Array<{ key: TabKey; label: string }> = [
+  { key: "profile", label: "User Profile" },
+  { key: "employment", label: "Employment" },
+  { key: "bank", label: "Bank Details" },
+  { key: "emergency", label: "Emergency Contact" },
+];
 
 type FormAction = (state: CreateEmployeeResult | null, formData: FormData) => Promise<CreateEmployeeResult>;
 
@@ -41,15 +80,29 @@ export default function EmployeeForm({
   const router = useRouter();
   const [state, formAction, pending] = useActionState<CreateEmployeeResult | null, FormData>(action, null);
   const [currentRole, setCurrentRole] = useState<string>(employee?.role ?? "");
+  const [employmentType, setEmploymentType] = useState<string>(employee?.employmentType ?? "");
+  const [startDate, setStartDate] = useState<string>(employee?.startDate ?? "");
+  const [endDate, setEndDate] = useState<string>(employee?.endDate ?? "");
+  const [activeTab, setActiveTab] = useState<TabKey>("profile");
+  const [branchId, setBranchId] = useState<string>(
+    employee?.branchId ? String(employee.branchId) : "",
+  );
+  const [departmentId, setDepartmentId] = useState<string>(
+    employee?.departmentId ? String(employee.departmentId) : "",
+  );
+  // Department select is only relevant under HQ — derived from the chosen branch's code.
+  const isHqSelected =
+    branches.find((b) => String(b.id) === branchId)?.code === "HQ";
+
+  // When the user changes Employment Type or Start Date, auto-fill End Date for
+  // fixed-term contracts. Skip if Start Date is empty or contract is permanent.
+  function recalcEndDate(nextType: string, nextStart: string) {
+    const months = CONTRACT_MONTHS[nextType];
+    if (!months || !nextStart) return;
+    setEndDate(addMonthsIso(nextStart, months));
+  }
 
   const isEdit = mode === "edit";
-  const defaultOrgUnit = employee
-    ? employee.branchId
-      ? `branch:${employee.branchId}`
-      : employee.departmentId
-        ? `dept:${employee.departmentId}`
-        : ""
-    : "";
 
   const headingText = isSelfEdit ? "Edit My Profile" : isEdit ? "Edit Employee" : "Add Employee";
   const headingDesc = isSelfEdit
@@ -111,7 +164,13 @@ export default function EmployeeForm({
         <form action={formAction} className="space-y-6">
           {isEdit && employee && <input type="hidden" name="userId" value={employee.id} />}
 
-          <Section Icon={User} title="User Profile" description="Personal identity and contact details.">
+          <div className={activeTab === "profile" ? "" : "hidden"}>
+          <Section
+            Icon={User}
+            title="User Profile"
+            description="Personal identity and contact details."
+            actions={<TabNav active={activeTab} onChange={setActiveTab} />}
+          >
             <Field label="Full Name" required>
               <input name="fullName" type="text" placeholder="e.g. NIK NUR ATHIRAH NIK" className={inputCls} defaultValue={employee?.fullName ?? ""} required />
             </Field>
@@ -130,7 +189,7 @@ export default function EmployeeForm({
               />
             </Field>
             <Field label="Phone">
-              <input name="phone" type="tel" placeholder="+60 11-XXXX XXXX" className={inputCls} defaultValue={employee?.phone ?? ""} />
+              <PhoneInput name="phone" defaultValue={employee?.phone ?? ""} />
             </Field>
             <Field label="Gender">
               <Select name="gender" placeholder="Select gender" options={GENDER_OPTIONS} defaultValue={employee?.gender ?? ""} />
@@ -139,7 +198,7 @@ export default function EmployeeForm({
               <DobPicker defaultDob={employee?.dob ?? null} />
             </Field>
             <Field label="NRIC">
-              <input name="nric" type="text" placeholder="YYMMDD-PB-XXXX" className={inputCls} defaultValue={employee?.nric ?? ""} />
+              <NricInput name="nric" defaultValue={employee?.nric ?? ""} />
             </Field>
             <Field label="Nationality">
               <input name="nationality" type="text" className={inputCls} defaultValue={employee?.nationality ?? "Malaysian"} />
@@ -154,8 +213,15 @@ export default function EmployeeForm({
               />
             </Field>
           </Section>
+          </div>
 
-          <Section Icon={Briefcase} title="Employment" description="Role, branch, and contract terms.">
+          <div className={activeTab === "employment" ? "" : "hidden"}>
+          <Section
+            Icon={Briefcase}
+            title="Employment"
+            description="Role, branch, and contract terms."
+            actions={<TabNav active={activeTab} onChange={setActiveTab} />}
+          >
             <Field
               label="Employee ID"
               hint={isSelfEdit ? "Assigned by HR — read-only." : "Optional. Leave blank to assign later."}
@@ -186,11 +252,66 @@ export default function EmployeeForm({
                 <ChevronRight className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 rotate-90" aria-hidden="true" />
               </div>
             </Field>
-            <Field label="Branch / Department" required>
-              <OrgUnitSelect branches={branches} departments={departments} defaultValue={defaultOrgUnit} required />
+            <Field label="Branch" required>
+              <div className="relative">
+                <select
+                  name="branchId"
+                  value={branchId}
+                  onChange={(e) => {
+                    setBranchId(e.target.value);
+                    // Picking a non-HQ branch clears any previously selected department.
+                    const code = branches.find((b) => String(b.id) === e.target.value)?.code;
+                    if (code !== "HQ") setDepartmentId("");
+                  }}
+                  required
+                  className={`${inputCls} pr-8 appearance-none cursor-pointer`}
+                >
+                  <option value="" disabled>Select branch</option>
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>{b.code} — {b.name}</option>
+                  ))}
+                </select>
+                <ChevronRight className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 rotate-90" aria-hidden="true" />
+              </div>
             </Field>
+            {isHqSelected && (
+              <Field label="Department" required>
+                <div className="relative">
+                  <select
+                    name="departmentId"
+                    value={departmentId}
+                    onChange={(e) => setDepartmentId(e.target.value)}
+                    required
+                    className={`${inputCls} pr-8 appearance-none cursor-pointer`}
+                  >
+                    <option value="" disabled>Select department</option>
+                    {departments.map((d) => (
+                      <option key={d.id} value={d.id}>{d.code} — {d.name}</option>
+                    ))}
+                  </select>
+                  <ChevronRight className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 rotate-90" aria-hidden="true" />
+                </div>
+              </Field>
+            )}
             <Field label="Employment Type">
-              <Select name="employmentType" placeholder="Select type" options={EMPLOYMENT_TYPE_OPTIONS} defaultValue={employee?.employmentType ?? ""} />
+              <div className="relative">
+                <select
+                  name="employmentType"
+                  value={employmentType}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setEmploymentType(v);
+                    recalcEndDate(v, startDate);
+                  }}
+                  className={`${inputCls} pr-8 appearance-none cursor-pointer`}
+                >
+                  <option value="" disabled>Select type</option>
+                  {EMPLOYMENT_TYPE_OPTIONS.map((o) => (
+                    <option key={o} value={o}>{o}</option>
+                  ))}
+                </select>
+                <ChevronRight className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 rotate-90" aria-hidden="true" />
+              </div>
             </Field>
             {currentRole === "PT COACH" && (
               <Field label="Rate" hint="e.g. RM 50/hour — shown only for PT COACH">
@@ -204,10 +325,26 @@ export default function EmployeeForm({
               </Field>
             )}
             <Field label="Start Date">
-              <input name="startDate" type="date" className={inputCls} defaultValue={employee?.startDate ?? ""} />
+              <input
+                name="startDate"
+                type="date"
+                className={inputCls}
+                value={startDate}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setStartDate(v);
+                  recalcEndDate(employmentType, v);
+                }}
+              />
             </Field>
-            <Field label="End Date" hint="Leave blank if ongoing">
-              <input name="endDate" type="date" className={inputCls} defaultValue={employee?.endDate ?? ""} />
+            <Field label="End Date" hint="Auto-filled for fixed-term contracts — editable to match uni-set dates.">
+              <input
+                name="endDate"
+                type="date"
+                className={inputCls}
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
             </Field>
             <Field label="Status">
               <div className="relative">
@@ -230,27 +367,48 @@ export default function EmployeeForm({
               </label>
             </Field>
           </Section>
+          </div>
 
-          <Section Icon={Landmark} title="Bank Details" description="Used for salary disbursement.">
+          <div className={activeTab === "bank" ? "" : "hidden"}>
+          <Section
+            Icon={Landmark}
+            title="Bank Details"
+            description="Used for salary disbursement."
+            actions={<TabNav active={activeTab} onChange={setActiveTab} />}
+          >
             <Field label="Bank Name">
               <Select name="bankName" placeholder="Select bank" options={BANK_OPTIONS} defaultValue={employee?.bankName ?? ""} />
             </Field>
-            <Field label="Account Number">
+            <Field label="Account Holder Name" hint="Name as registered with the bank.">
+              <input name="accountName" type="text" placeholder="e.g. NIK NUR ATHIRAH BINTI NIK" className={inputCls} defaultValue={employee?.accountName ?? ""} />
+            </Field>
+            <Field label="Account Number" span={2}>
               <input name="bankAccount" type="text" inputMode="numeric" placeholder="e.g. 1642-3344-9902" className={inputCls} defaultValue={employee?.bankAccount ?? ""} />
             </Field>
           </Section>
+          </div>
 
-          <Section Icon={HeartPulse} title="Emergency Contact" description="Person to reach in case of emergency.">
+          <div className={activeTab === "emergency" ? "" : "hidden"}>
+          <Section
+            Icon={HeartPulse}
+            title="Emergency Contact"
+            description="Person to reach in case of emergency."
+            actions={<TabNav active={activeTab} onChange={setActiveTab} />}
+          >
             <Field label="Contact Name">
               <input name="emergencyName" type="text" placeholder="Full name" className={inputCls} defaultValue={employee?.emergencyName ?? ""} />
             </Field>
             <Field label="Contact Phone">
-              <input name="emergencyPhone" type="tel" placeholder="+60 12-XXX XXXX" className={inputCls} defaultValue={employee?.emergencyPhone ?? ""} />
+              <PhoneInput
+                name="emergencyPhone"
+                defaultValue={employee?.emergencyPhone ?? ""}
+              />
             </Field>
             <Field label="Relation">
               <Select name="emergencyRelation" placeholder="Select relation" options={RELATION_OPTIONS} defaultValue={employee?.emergencyRelation ?? ""} />
             </Field>
           </Section>
+          </div>
 
           <div className="sticky bottom-0 -mx-6 px-6 py-4 bg-slate-50/85 backdrop-blur border-t border-slate-200 flex items-center justify-end gap-2">
             <button
@@ -278,27 +436,146 @@ export default function EmployeeForm({
 const inputCls =
   "block w-full h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500";
 
+// ──────────────────────────────────────────────────────────
+// TabNav — pill-segmented control matching the AppShell tabs.
+// ──────────────────────────────────────────────────────────
+
+function TabNav({ active, onChange }: { active: TabKey; onChange: (key: TabKey) => void }) {
+  return (
+    <div
+      role="tablist"
+      aria-label="Employee form sections"
+      className="inline-flex items-center gap-1 p-1 rounded-full bg-slate-100"
+    >
+      {TABS.map((t) => {
+        const isActive = t.key === active;
+        return (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={isActive}
+            onClick={() => onChange(t.key)}
+            className={`h-9 px-5 rounded-full text-sm font-semibold transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
+              isActive
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────
+// NricInput — auto-formatted Malaysian NRIC YYMMDD-PB-XXXX (12 digits, 6-2-4).
+// ──────────────────────────────────────────────────────────
+
+function formatNric(digits: string): string {
+  const d = digits.slice(0, 12);
+  if (d.length <= 6) return d;
+  if (d.length <= 8) return `${d.slice(0, 6)}-${d.slice(6)}`;
+  return `${d.slice(0, 6)}-${d.slice(6, 8)}-${d.slice(8)}`;
+}
+
+function NricInput({ name, defaultValue = "" }: { name: string; defaultValue?: string }) {
+  const [digits, setDigits] = useState(() => defaultValue.replace(/\D/g, "").slice(0, 12));
+  const formatted = formatNric(digits);
+  return (
+    <input
+      name={name}
+      type="text"
+      inputMode="numeric"
+      autoComplete="off"
+      value={formatted}
+      onChange={(e) => setDigits(e.target.value.replace(/\D/g, "").slice(0, 12))}
+      placeholder="YYMMDD-PB-XXXX"
+      className={inputCls}
+      maxLength={14}
+    />
+  );
+}
+
+// ──────────────────────────────────────────────────────────
+// PhoneInput — fixed +60 prefix + auto-formatted XX-NNNN MMMM
+// ──────────────────────────────────────────────────────────
+
+function extractLocalDigits(input: string): string {
+  if (!input) return "";
+  let d = input.replace(/\D/g, "");
+  if (d.startsWith("60")) d = d.slice(2); // strip +60 / 60 country code
+  if (d.startsWith("0")) d = d.slice(1); // strip leading 0 (e.g. 011-...)
+  return d.slice(0, 10);
+}
+
+function formatLocalPhone(digits: string): string {
+  const len = digits.length;
+  if (len === 0) return "";
+  if (len <= 2) return digits;
+  if (len <= 6) return `${digits.slice(0, 2)}-${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}-${digits.slice(2, 6)} ${digits.slice(6)}`;
+}
+
+function PhoneInput({
+  name,
+  defaultValue = "",
+}: {
+  name: string;
+  defaultValue?: string;
+}) {
+  const [digits, setDigits] = useState(() => extractLocalDigits(defaultValue));
+  const formatted = formatLocalPhone(digits);
+  const submitValue = digits ? `+60 ${formatted}` : "";
+
+  return (
+    <div className="flex items-stretch h-10 rounded-lg border border-slate-200 bg-white overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
+      <span
+        aria-hidden="true"
+        className="inline-flex items-center px-3 bg-slate-50 border-r border-slate-200 text-sm font-semibold text-slate-600 select-none"
+      >
+        +60
+      </span>
+      <input
+        type="tel"
+        inputMode="numeric"
+        autoComplete="tel-national"
+        value={formatted}
+        onChange={(e) => setDigits(e.target.value.replace(/\D/g, "").slice(0, 10))}
+        placeholder="11-XXXX XXXX"
+        className="flex-1 px-3 bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
+      />
+      <input type="hidden" name={name} value={submitValue} />
+    </div>
+  );
+}
+
 function Section({
   Icon,
   title,
   description,
+  actions,
   children,
 }: {
   Icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
   title: string;
   description: string;
+  actions?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <section className="bg-white rounded-xl border border-slate-200 shadow-sm">
-      <header className="flex items-start gap-3 px-6 py-5 border-b border-slate-100">
+      <header className="flex items-center gap-3 px-6 py-5 border-b border-slate-100">
         <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
           <Icon className="w-5 h-5 text-blue-600" aria-hidden="true" />
         </div>
-        <div>
+        <div className="flex-1 min-w-0">
           <h2 className="text-base font-semibold text-slate-900">{title}</h2>
           <p className="text-sm text-slate-500">{description}</p>
         </div>
+        {actions && <div className="shrink-0">{actions}</div>}
       </header>
       <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
         {children}
@@ -414,38 +691,3 @@ function DobPicker({ defaultDob }: { defaultDob: string | null }) {
   );
 }
 
-function OrgUnitSelect({
-  branches,
-  departments,
-  defaultValue = "",
-  required,
-}: {
-  branches: BranchOpt[];
-  departments: DepartmentOpt[];
-  defaultValue?: string;
-  required?: boolean;
-}) {
-  return (
-    <div className="relative">
-      <select
-        name="orgUnit"
-        defaultValue={defaultValue}
-        required={required}
-        className={`${inputCls} pr-8 appearance-none cursor-pointer`}
-      >
-        <option value="" disabled>Select branch or department</option>
-        <optgroup label="Branches">
-          {branches.map((b) => (
-            <option key={`b-${b.id}`} value={`branch:${b.id}`}>{b.code} — {b.name}</option>
-          ))}
-        </optgroup>
-        <optgroup label="Departments">
-          {departments.map((d) => (
-            <option key={`d-${d.id}`} value={`dept:${d.id}`}>{d.code} — {d.name}</option>
-          ))}
-        </optgroup>
-      </select>
-      <ChevronRight className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 rotate-90" aria-hidden="true" />
-    </div>
-  );
-}

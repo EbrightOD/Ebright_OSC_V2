@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { submitClaim } from "@/app/claim/actions";
 import {
   Home,
   ChevronRight,
@@ -19,6 +20,7 @@ import {
   CheckCircle2,
   Paperclip,
   Info,
+  type LucideIcon,
 } from "lucide-react";
 
 export type ClaimFormType = "sales" | "health" | "transport";
@@ -32,7 +34,7 @@ interface Theme {
   accentRing: string;
   accentBorder: string;
   accentText: string;
-  Icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  Icon: LucideIcon;
 }
 
 const THEMES: Record<ClaimFormType, Theme> = {
@@ -76,7 +78,13 @@ const TRANSPORT_ROUND_TRIP = 2;
 const HEALTH_ANNUAL_CAP = 500;
 const ACCENT_RED = "#E3172E";
 
-export default function ClaimFormView({ type }: { type: ClaimFormType }) {
+export default function ClaimFormView({
+  type,
+  healthUsed = 0,
+}: {
+  type: ClaimFormType;
+  healthUsed?: number;
+}) {
   const theme = THEMES[type];
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -85,13 +93,46 @@ export default function ClaimFormView({ type }: { type: ClaimFormType }) {
   const [amount, setAmount] = useState("");
   const [distance, setDistance] = useState("");
   const [description, setDescription] = useState("");
-  const [files, setFiles] = useState<File[]>([]);
+  const [file, setFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [submittedAmount, setSubmittedAmount] = useState<number>(0);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
 
-  const healthUsed = 0;
-  const healthRemaining = Math.max(0, HEALTH_ANNUAL_CAP - healthUsed);
-  const healthUsedPct = (healthUsed / HEALTH_ANNUAL_CAP) * 100;
+  const isImageFile = !!file && file.type.startsWith("image/");
+
+  useEffect(() => {
+    if (!file || !file.type.startsWith("image/")) {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  useEffect(() => {
+    if (!lightboxOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLightboxOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightboxOpen]);
+
+  const typedAmount = useMemo(() => {
+    const n = parseFloat(amount);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  }, [amount]);
+  const projectedUsed = healthUsed + typedAmount;
+  const projectedRemaining = HEALTH_ANNUAL_CAP - projectedUsed;
+  const projectedPct = Math.min(100, (projectedUsed / HEALTH_ANNUAL_CAP) * 100);
+  const healthOverCap = type === "health" && projectedUsed > HEALTH_ANNUAL_CAP;
+  const healthNearCap =
+    type === "health" && !healthOverCap && projectedPct >= 80;
 
   const transportTotal = useMemo(() => {
     const d = parseFloat(distance || "0");
@@ -101,25 +142,41 @@ export default function ClaimFormView({ type }: { type: ClaimFormType }) {
 
   const primaryFieldValid =
     type === "transport" ? !!distance && parseFloat(distance) > 0 : !!amount;
-  const canSubmit = !!date && primaryFieldValid;
+  const canSubmit = !!date && primaryFieldValid && !healthOverCap;
 
-  const handleFiles = (incoming: FileList | null) => {
-    if (!incoming) return;
-    const arr = Array.from(incoming).slice(0, 5);
-    setFiles((prev) => {
-      const names = new Set(prev.map((f) => f.name));
-      const next = arr.filter((f) => !names.has(f.name));
-      return [...prev, ...next];
-    });
+  const handleFile = (incoming: FileList | null) => {
+    if (!incoming || incoming.length === 0) return;
+    setFile(incoming[0]);
   };
 
-  const removeFile = (name: string) =>
-    setFiles((prev) => prev.filter((f) => f.name !== name));
+  const removeFile = () => setFile(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canSubmit) return;
-    setSubmitted(true);
+    if (!canSubmit || isPending) return;
+    setErrorMsg(null);
+
+    const fd = new FormData();
+    fd.append("claim_type", type);
+    fd.append("claim_date", date);
+    fd.append("description", description);
+    if (type === "transport") {
+      fd.append("distance", distance);
+    } else {
+      fd.append("amount", amount);
+    }
+    if (file) fd.append("attachment_file", file);
+
+    startTransition(async () => {
+      const result = await submitClaim(null, fd);
+      if (!result.ok) {
+        setErrorMsg(result.error ?? "Failed to submit claim.");
+        return;
+      }
+      setSubmittedAmount(result.amount ?? 0);
+      setSubmitted(true);
+      router.refresh();
+    });
   };
 
   if (submitted) {
@@ -128,16 +185,16 @@ export default function ClaimFormView({ type }: { type: ClaimFormType }) {
         theme={theme}
         type={type}
         date={date}
-        amount={amount}
+        displayAmount={submittedAmount}
         distance={distance}
-        transportTotal={transportTotal}
         onAnother={() => {
           setSubmitted(false);
           setDate("");
           setAmount("");
           setDistance("");
           setDescription("");
-          setFiles([]);
+          setFile(null);
+          setErrorMsg(null);
         }}
       />
     );
@@ -390,56 +447,99 @@ export default function ClaimFormView({ type }: { type: ClaimFormType }) {
             </div>
 
             {/* Health annual cap */}
-            {type === "health" && (
-              <div
-                style={{
-                  borderRadius: "14px",
-                  padding: "18px 20px",
-                  backgroundColor: theme.accentSoft,
-                  border: `1px solid ${theme.accentBorder}`,
-                }}
-              >
+            {type === "health" && (() => {
+              const stateColor = healthOverCap
+                ? { bg: "#FEF2F2", border: "#FECACA", text: "#991B1B", bar: "#DC2626" }
+                : healthNearCap
+                  ? { bg: "#FFFBEB", border: "#FDE68A", text: "#92400E", bar: "#D97706" }
+                  : {
+                      bg: theme.accentSoft,
+                      border: theme.accentBorder,
+                      text: theme.accentText,
+                      bar: theme.accent,
+                    };
+              const baselinePct = Math.min(100, (healthUsed / HEALTH_ANNUAL_CAP) * 100);
+              const typedPct = Math.max(0, projectedPct - baselinePct);
+              return (
                 <div
                   style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    fontSize: "12.5px",
-                    marginBottom: "10px",
-                  }}
-                >
-                  <span style={{ fontWeight: 600, color: theme.accentText }}>
-                    Annual limit · RM {HEALTH_ANNUAL_CAP}
-                  </span>
-                  <span style={{ fontWeight: 700, color: theme.accentText }}>
-                    RM {healthRemaining.toFixed(2)} remaining
-                  </span>
-                </div>
-                <div
-                  style={{
-                    width: "100%",
-                    height: "8px",
-                    borderRadius: "9999px",
-                    backgroundColor: "#fff",
-                    overflow: "hidden",
-                    border: `1px solid ${theme.accentBorder}`,
+                    borderRadius: "14px",
+                    padding: "18px 20px",
+                    backgroundColor: stateColor.bg,
+                    border: `1px solid ${stateColor.border}`,
+                    transition: "background-color 0.2s, border-color 0.2s",
                   }}
                 >
                   <div
                     style={{
-                      width: `${healthUsedPct}%`,
-                      height: "100%",
-                      backgroundColor: theme.accent,
-                      transition: "width 0.3s",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      fontSize: "12.5px",
+                      marginBottom: "10px",
                     }}
-                  />
+                  >
+                    <span style={{ fontWeight: 600, color: stateColor.text }}>
+                      Annual limit · RM {HEALTH_ANNUAL_CAP}
+                    </span>
+                    <span style={{ fontWeight: 700, color: stateColor.text }}>
+                      {healthOverCap
+                        ? `Over by RM ${Math.abs(projectedRemaining).toFixed(2)}`
+                        : `RM ${projectedRemaining.toFixed(2)} remaining`}
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      width: "100%",
+                      height: "8px",
+                      borderRadius: "9999px",
+                      backgroundColor: "#fff",
+                      overflow: "hidden",
+                      border: `1px solid ${stateColor.border}`,
+                      display: "flex",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${baselinePct}%`,
+                        height: "100%",
+                        backgroundColor: stateColor.bar,
+                        opacity: 0.55,
+                        transition: "width 0.25s, background-color 0.2s",
+                      }}
+                    />
+                    <div
+                      style={{
+                        width: `${typedPct}%`,
+                        height: "100%",
+                        backgroundColor: stateColor.bar,
+                        transition: "width 0.25s, background-color 0.2s",
+                      }}
+                    />
+                  </div>
+                  <p
+                    style={{
+                      marginTop: "10px",
+                      fontSize: "11.5px",
+                      color: stateColor.text,
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: "4px 10px",
+                    }}
+                  >
+                    <span>
+                      Used this year: <b>RM {healthUsed.toFixed(2)}</b>
+                    </span>
+                    {typedAmount > 0 && (
+                      <span>
+                        · Claiming now: <b>RM {typedAmount.toFixed(2)}</b>
+                      </span>
+                    )}
+                    <span>· {new Date().getFullYear()}</span>
+                  </p>
                 </div>
-                <p style={{ marginTop: "10px", fontSize: "11.5px", color: theme.accentText }}>
-                  Used this year: <b>RM {healthUsed.toFixed(2)}</b> ·{" "}
-                  {new Date().getFullYear()}
-                </p>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Transport calculation */}
             {type === "transport" && (
@@ -532,140 +632,185 @@ export default function ClaimFormView({ type }: { type: ClaimFormType }) {
               icon={<Paperclip size={13} strokeWidth={2.5} />}
               label="Supporting Documents"
             >
-              <div
-                onClick={() => fileRef.current?.click()}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setDragOver(true);
-                }}
-                onDragLeave={() => setDragOver(false)}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setDragOver(false);
-                  handleFiles(e.dataTransfer.files);
-                }}
-                style={{
-                  cursor: "pointer",
-                  borderRadius: "14px",
-                  border: `2px dashed ${dragOver ? theme.accent : "#E5E7EB"}`,
-                  padding: "32px",
-                  textAlign: "center",
-                  transition: "all 0.2s",
-                  backgroundColor: dragOver ? theme.accentSoft : "#FAFAFA",
-                }}
-              >
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept=".pdf,.jpg,.jpeg,.png"
-                  multiple
-                  style={{ display: "none" }}
-                  onChange={(e) => handleFiles(e.target.files)}
-                />
+              {!file ? (
                 <div
+                  onClick={() => fileRef.current?.click()}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setDragOver(true);
+                  }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragOver(false);
+                    handleFile(e.dataTransfer.files);
+                  }}
                   style={{
-                    margin: "0 auto 12px",
-                    width: "44px",
-                    height: "44px",
-                    borderRadius: "9999px",
-                    display: "grid",
-                    placeItems: "center",
-                    backgroundColor: dragOver ? theme.accentRing : "#F5F5F5",
+                    cursor: "pointer",
+                    borderRadius: "14px",
+                    border: `2px dashed ${dragOver ? theme.accent : "#E5E7EB"}`,
+                    padding: "32px",
+                    textAlign: "center",
+                    transition: "all 0.2s",
+                    backgroundColor: dragOver ? theme.accentSoft : "#FAFAFA",
                   }}
                 >
-                  <Upload
-                    size={18}
-                    strokeWidth={1.75}
-                    style={{ color: dragOver ? theme.accent : "#737373" }}
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg,.png"
+                    style={{ display: "none" }}
+                    onChange={(e) => handleFile(e.target.files)}
                   />
+                  <div
+                    style={{
+                      margin: "0 auto 12px",
+                      width: "44px",
+                      height: "44px",
+                      borderRadius: "9999px",
+                      display: "grid",
+                      placeItems: "center",
+                      backgroundColor: dragOver ? theme.accentRing : "#F5F5F5",
+                    }}
+                  >
+                    <Upload
+                      size={18}
+                      strokeWidth={1.75}
+                      style={{ color: dragOver ? theme.accent : "#737373" }}
+                    />
+                  </div>
+                  <p
+                    style={{
+                      fontSize: "13.5px",
+                      color: "#404040",
+                      fontWeight: 500,
+                      marginBottom: "4px",
+                    }}
+                  >
+                    Click to upload{" "}
+                    <span style={{ color: theme.accent }}>Receipt or MC</span>
+                  </p>
+                  <p style={{ fontSize: "11.5px", color: "#A3A3A3" }}>
+                    PDF, JPG or PNG · Max 5MB
+                  </p>
                 </div>
-                <p
-                  style={{
-                    fontSize: "13.5px",
-                    color: "#404040",
-                    fontWeight: 500,
-                    marginBottom: "4px",
-                  }}
-                >
-                  Click to upload{" "}
-                  <span style={{ color: theme.accent }}>Receipt or MC</span>
-                </p>
-                <p style={{ fontSize: "11.5px", color: "#A3A3A3" }}>
-                  PDF, JPG or PNG · Max 5MB per file · Up to 5 files
-                </p>
-              </div>
-
-              {files.length > 0 && (
+              ) : (
                 <div
                   style={{
                     display: "flex",
-                    flexDirection: "column",
-                    gap: "8px",
-                    marginTop: "12px",
+                    alignItems: "center",
+                    gap: "12px",
+                    padding: "14px 16px",
+                    borderRadius: "12px",
+                    border: `1px solid ${theme.accentBorder}`,
+                    backgroundColor: theme.accentSoft,
                   }}
                 >
-                  {files.map((f) => (
-                    <div
-                      key={f.name}
+                  {isImageFile && previewUrl ? (
+                    <button
+                      type="button"
+                      onClick={() => setLightboxOpen(true)}
+                      aria-label="Preview image"
                       style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "12px",
-                        padding: "10px 14px",
+                        width: "52px",
+                        height: "52px",
                         borderRadius: "10px",
-                        border: "1px solid #E5E7EB",
+                        overflow: "hidden",
+                        flexShrink: 0,
+                        padding: 0,
+                        border: `1px solid ${theme.accentBorder}`,
                         backgroundColor: "#fff",
+                        cursor: "zoom-in",
+                        display: "block",
                       }}
                     >
-                      <div
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={previewUrl}
+                        alt={file.name}
                         style={{
-                          width: "32px",
-                          height: "32px",
-                          borderRadius: "8px",
-                          display: "grid",
-                          placeItems: "center",
-                          backgroundColor: theme.accentSoft,
-                          color: theme.accent,
-                          flexShrink: 0,
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                          display: "block",
                         }}
-                      >
-                        <Paperclip size={14} strokeWidth={2} />
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <p
-                          style={{
-                            fontSize: "13px",
-                            fontWeight: 500,
-                            color: "#262626",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {f.name}
-                        </p>
-                        <p style={{ fontSize: "11px", color: "#A3A3A3" }}>
-                          {(f.size / 1024).toFixed(1)} KB
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => removeFile(f.name)}
-                        style={{
-                          width: "28px",
-                          height: "28px",
-                          display: "grid",
-                          placeItems: "center",
-                          borderRadius: "6px",
-                          color: "#A3A3A3",
-                        }}
-                        className="hover:bg-neutral-100 hover:text-neutral-700 transition-colors"
-                        aria-label={`Remove ${f.name}`}
-                      >
-                        <X size={14} />
-                      </button>
+                      />
+                    </button>
+                  ) : (
+                    <div
+                      style={{
+                        width: "36px",
+                        height: "36px",
+                        borderRadius: "8px",
+                        display: "grid",
+                        placeItems: "center",
+                        backgroundColor: "#fff",
+                        color: theme.accent,
+                        flexShrink: 0,
+                      }}
+                    >
+                      <Paperclip size={16} strokeWidth={2} />
                     </div>
-                  ))}
+                  )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p
+                      style={{
+                        fontSize: "13.5px",
+                        fontWeight: 500,
+                        color: "#262626",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {file.name}
+                    </p>
+                    <p style={{ fontSize: "11.5px", color: "#737373" }}>
+                      {(file.size / 1024).toFixed(1)} KB
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => fileRef.current?.click()}
+                    style={{
+                      height: "32px",
+                      padding: "0 12px",
+                      borderRadius: "8px",
+                      border: `1px solid ${theme.accentBorder}`,
+                      backgroundColor: "#fff",
+                      fontSize: "12px",
+                      fontWeight: 500,
+                      color: theme.accentText,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Replace
+                  </button>
+                  <button
+                    type="button"
+                    onClick={removeFile}
+                    style={{
+                      width: "32px",
+                      height: "32px",
+                      display: "grid",
+                      placeItems: "center",
+                      borderRadius: "8px",
+                      color: "#A3A3A3",
+                      border: "1px solid transparent",
+                      background: "transparent",
+                      cursor: "pointer",
+                    }}
+                    aria-label="Remove file"
+                  >
+                    <X size={14} />
+                  </button>
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg,.png"
+                    style={{ display: "none" }}
+                    onChange={(e) => handleFile(e.target.files)}
+                  />
                 </div>
               )}
             </FieldBlock>
@@ -704,7 +849,17 @@ export default function ClaimFormView({ type }: { type: ClaimFormType }) {
               <InfoNotice theme={theme} title="Health Claim Cap">
                 Maximum <b>RM {HEALTH_ANNUAL_CAP}</b> per year. You have used{" "}
                 <b>RM {healthUsed.toFixed(2)}</b> so far in {new Date().getFullYear()}.
-                Remaining: <b>RM {healthRemaining.toFixed(2)}</b>.
+                {healthOverCap ? (
+                  <>
+                    {" "}This claim of <b>RM {typedAmount.toFixed(2)}</b> exceeds your
+                    remaining cap by <b>RM {Math.abs(projectedRemaining).toFixed(2)}</b>.
+                  </>
+                ) : (
+                  <>
+                    {" "}After this claim,{" "}
+                    <b>RM {Math.max(0, projectedRemaining).toFixed(2)}</b> would remain.
+                  </>
+                )}
               </InfoNotice>
             )}
             {type === "transport" && (
@@ -716,6 +871,47 @@ export default function ClaimFormView({ type }: { type: ClaimFormType }) {
                 </b>
                 . Submit one claim per working day.
               </InfoNotice>
+            )}
+
+            {errorMsg && (
+              <div
+                role="alert"
+                style={{
+                  display: "flex",
+                  gap: "12px",
+                  alignItems: "flex-start",
+                  borderRadius: "12px",
+                  backgroundColor: "#FEF2F2",
+                  border: "1px solid #FECACA",
+                  padding: "14px 16px",
+                }}
+              >
+                <div
+                  style={{
+                    width: "18px",
+                    height: "18px",
+                    borderRadius: "9999px",
+                    backgroundColor: "#DC2626",
+                    color: "#fff",
+                    display: "grid",
+                    placeItems: "center",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    marginTop: "2px",
+                    flexShrink: 0,
+                  }}
+                >
+                  !
+                </div>
+                <div>
+                  <p style={{ fontSize: "13.5px", fontWeight: 600, color: "#7F1D1D" }}>
+                    Could not submit claim
+                  </p>
+                  <p style={{ fontSize: "12px", color: "#991B1B", lineHeight: 1.55 }}>
+                    {errorMsg}
+                  </p>
+                </div>
+              </div>
             )}
           </div>
 
@@ -751,31 +947,30 @@ export default function ClaimFormView({ type }: { type: ClaimFormType }) {
             </Link>
             <button
               type="submit"
-              disabled={!canSubmit}
+              disabled={!canSubmit || isPending}
               style={{
                 height: "44px",
                 padding: "0 24px",
                 borderRadius: "10px",
-                backgroundColor: canSubmit ? theme.accent : "#D4D4D4",
+                backgroundColor: canSubmit && !isPending ? theme.accent : "#D4D4D4",
                 color: "#fff",
                 fontSize: "13.5px",
                 fontWeight: 600,
-                cursor: canSubmit ? "pointer" : "not-allowed",
-                boxShadow: canSubmit
-                  ? `0 4px 12px ${theme.accentRing}`
-                  : "none",
+                cursor: canSubmit && !isPending ? "pointer" : "not-allowed",
+                boxShadow:
+                  canSubmit && !isPending ? `0 4px 12px ${theme.accentRing}` : "none",
                 transition: "background-color 0.15s, box-shadow 0.15s",
               }}
               onMouseEnter={(e) => {
-                if (!canSubmit) return;
+                if (!canSubmit || isPending) return;
                 e.currentTarget.style.backgroundColor = theme.accentDark;
               }}
               onMouseLeave={(e) => {
-                if (!canSubmit) return;
+                if (!canSubmit || isPending) return;
                 e.currentTarget.style.backgroundColor = theme.accent;
               }}
             >
-              Submit Claim
+              {isPending ? "Submitting…" : "Submit Claim"}
             </button>
           </div>
         </form>
@@ -787,6 +982,67 @@ export default function ClaimFormView({ type }: { type: ClaimFormType }) {
         input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
         input[type="number"] { -moz-appearance: textfield; }
       `}</style>
+
+      {lightboxOpen && previewUrl && file && (
+        <div
+          onClick={() => setLightboxOpen(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Attachment preview"
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(15, 23, 42, 0.82)",
+            backdropFilter: "blur(4px)",
+            zIndex: 100,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "32px",
+            cursor: "zoom-out",
+          }}
+        >
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setLightboxOpen(false);
+            }}
+            aria-label="Close preview"
+            style={{
+              position: "absolute",
+              top: "20px",
+              right: "20px",
+              width: "40px",
+              height: "40px",
+              borderRadius: "9999px",
+              border: "none",
+              backgroundColor: "rgba(255,255,255,0.1)",
+              color: "#fff",
+              display: "grid",
+              placeItems: "center",
+              cursor: "pointer",
+              backdropFilter: "blur(4px)",
+            }}
+          >
+            <X size={18} />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={previewUrl}
+            alt={file.name}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: "min(1100px, 92vw)",
+              maxHeight: "88vh",
+              objectFit: "contain",
+              borderRadius: "12px",
+              boxShadow: "0 25px 80px rgba(0,0,0,0.4)",
+              cursor: "default",
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -924,23 +1180,21 @@ function SuccessScreen({
   theme,
   type,
   date,
-  amount,
+  displayAmount,
   distance,
-  transportTotal,
   onAnother,
 }: {
   theme: Theme;
   type: ClaimFormType;
   date: string;
-  amount: string;
+  displayAmount: number;
   distance: string;
-  transportTotal: number;
   onAnother: () => void;
 }) {
-  const displayAmount =
+  const amountLabel =
     type === "transport"
-      ? `RM ${transportTotal.toFixed(2)} (${parseFloat(distance || "0").toFixed(1)} km)`
-      : `RM ${parseFloat(amount || "0").toFixed(2)}`;
+      ? `RM ${displayAmount.toFixed(2)} (${parseFloat(distance || "0").toFixed(1)} km)`
+      : `RM ${displayAmount.toFixed(2)}`;
 
   return (
     <div
@@ -986,7 +1240,7 @@ function SuccessScreen({
           }}
         >
           Your {theme.label.toLowerCase()} of{" "}
-          <span style={{ fontWeight: 600, color: "#262626" }}>{displayAmount}</span> for{" "}
+          <span style={{ fontWeight: 600, color: "#262626" }}>{amountLabel}</span> for{" "}
           <span style={{ fontWeight: 600, color: "#262626" }}>{date}</span> has been sent
           for approval.
         </p>
