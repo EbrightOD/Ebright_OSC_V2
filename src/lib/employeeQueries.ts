@@ -5,10 +5,12 @@ import { titleCaseName } from "@/lib/text";
 export const ROLE_OPTIONS = ["FT CEO", "FT HOD", "FT EXEC", "BM", "FT COACH", "PT COACH", "INTERN"] as const;
 export type RoleOption = (typeof ROLE_OPTIONS)[number];
 
-export const STATUS_OPTIONS = ["active", "inactive"] as const;
+export const STATUS_OPTIONS = ["active", "onboarding", "inactive", "archive"] as const;
 export type StatusOption = (typeof STATUS_OPTIONS)[number];
 
 export const STAFF_ROLE_ID = 4;
+// Roles that appear in the Employees list (role_id values from the `role` table).
+export const EMPLOYEE_LIST_ROLE_IDS = [2, 4];
 
 export interface EmployeeRow {
   id: number;
@@ -43,6 +45,7 @@ export interface EmployeeDetailFull extends EmployeeRow {
   employmentId: number | null;
   bankName: string | null;
   bankAccount: string | null;
+  accountName: string | null;
   emergencyName: string | null;
   emergencyPhone: string | null;
   emergencyRelation: string | null;
@@ -83,7 +86,7 @@ export async function listEmployees(filters: ListFilters = {}): Promise<Employee
   if (filters.status) employmentWhere.status = filters.status;
 
   const whereUser: Record<string, unknown> = {
-    role_id: STAFF_ROLE_ID,
+    role_id: { in: EMPLOYEE_LIST_ROLE_IDS },
     NOT: { status: "pending" },
   };
 
@@ -191,7 +194,12 @@ export async function listTeamMembersByDepartment(
 ): Promise<TeamMember[]> {
   const rows = await prisma.users.findMany({
     where: {
-      NOT: { OR: [{ user_id: excludeUserId }, { status: "pending" }] },
+      NOT: {
+        OR: [
+          { user_id: excludeUserId },
+          { status: { in: ["pending", "archive"] } },
+        ],
+      },
       employment: {
         some: { department: { department_code: departmentCode } },
       },
@@ -266,6 +274,7 @@ export async function getEmployeeById(userId: number): Promise<EmployeeDetailFul
     employmentId: emp?.employment_id ?? null,
     bankName: bank?.bank_name ?? null,
     bankAccount: bank?.bank_account ?? null,
+    accountName: bank?.account_name ?? null,
     emergencyName: em?.name ? titleCaseName(em.name) : null,
     emergencyPhone: em?.phone ?? null,
     emergencyRelation: em?.relation ?? null,

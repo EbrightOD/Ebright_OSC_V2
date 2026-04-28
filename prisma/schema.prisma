@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["partialIndexes"]
 }
 
 datasource db {
@@ -7,28 +8,37 @@ datasource db {
 }
 
 model attendance {
-  attendance_id Int            @id @default(autoincrement())
-  user_id       Int
-  date          DateTime       @db.Date
-  check_in      DateTime?      @db.Timestamptz(6)
-  check_out     DateTime?      @db.Timestamptz(6)
-  status        String         @default("present") @db.VarChar(50)
-  leave_id      Int?
-  total_hours   Decimal?       @db.Decimal(5, 2)
-  leave_request leave_request? @relation(fields: [leave_id], references: [leave_id], onUpdate: NoAction, map: "fk_attendance_leave")
-  users         users          @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_attendance_user")
+  attendance_id  Int              @id @default(autoincrement())
+  user_id        Int
+  date           DateTime         @db.Date
+  check_in       DateTime?        @db.Timestamptz(6)
+  check_out      DateTime?        @db.Timestamptz(6)
+  status         String           @default("present") @db.VarChar(50)
+  leave_id       Int?
+  total_hours    Decimal?         @db.Decimal(5, 2)
+  device_id      Int?
+  devices        devices?         @relation(fields: [device_id], references: [device_id], onUpdate: NoAction, map: "fk_attendance_device")
+  leave_request  leave_request?   @relation(fields: [leave_id], references: [leave_id], onUpdate: NoAction, map: "fk_attendance_leave")
+  users          users            @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_attendance_user")
+  attendance_log attendance_log[]
 
   @@unique([user_id, date], map: "uq_attendance_user_date")
 }
 
 model attendance_log {
-  log_id    Int      @id @default(autoincrement())
-  user_id   Int
-  scan_time DateTime @db.Timestamptz(6)
-  scan_type String   @db.VarChar(10)
-  device_id Int?
-  devices   devices? @relation(fields: [device_id], references: [device_id], onUpdate: NoAction, map: "fk_log_device")
-  users     users    @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_log_user")
+  log_id        Int         @id @default(autoincrement())
+  user_id       Int
+  scan_time     DateTime    @db.Timestamptz(6)
+  scan_type     String      @db.VarChar(10)
+  device_id     Int?
+  scan_serial   String?     @db.VarChar(100)
+  attendance_id Int?
+  scan_time_myt DateTime?   @default(dbgenerated("(scan_time AT TIME ZONE 'Asia/Kuala_Lumpur'::text)")) @db.Timestamp(6)
+  attendance    attendance? @relation(fields: [attendance_id], references: [attendance_id], onUpdate: NoAction, map: "fk_attendance_log_attendance")
+  devices       devices?    @relation(fields: [device_id], references: [device_id], onUpdate: NoAction, map: "fk_log_device")
+  users         users       @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_log_user")
+
+  @@unique([device_id, scan_serial], map: "uq_attendance_log_device_serial", where: raw("(scan_serial IS NOT NULL)"))
 }
 
 model bank_details {
@@ -36,6 +46,7 @@ model bank_details {
   user_id      Int     @unique
   bank_name    String? @db.VarChar(100)
   bank_account String? @db.VarChar(50)
+  account_name String? @db.VarChar(200)
   users        users   @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_bank_user")
 }
 
@@ -45,6 +56,7 @@ model branch {
   location    String?      @db.VarChar(255)
   branch_code String?      @unique @db.VarChar(10)
   region      String?      @db.VarChar(10)
+  devices     devices[]
   employment  employment[]
 }
 
@@ -58,8 +70,11 @@ model department {
 model devices {
   device_id      Int              @id @default(autoincrement())
   serial_no      String           @unique @db.VarChar(100)
-  location       String?          @db.VarChar(255)
+  branch_id      Int?
+  ip_address     String?          @db.VarChar(45)
+  attendance     attendance[]
   attendance_log attendance_log[]
+  branch         branch?          @relation(fields: [branch_id], references: [branch_id], onUpdate: NoAction, map: "fk_devices_branch")
 }
 
 model emergency_contact {
@@ -150,10 +165,32 @@ model users {
   attendance                                     attendance[]
   attendance_log                                 attendance_log[]
   bank_details                                   bank_details?
+  claim                                          claim[]
   emergency_contact                              emergency_contact[]
   employment                                     employment[]
   leave_request_leave_request_approved_byTousers leave_request[]     @relation("leave_request_approved_byTousers")
   leave_request_leave_request_user_idTousers     leave_request[]     @relation("leave_request_user_idTousers")
   user_profile                                   user_profile?
   role                                           role                @relation(fields: [role_id], references: [role_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_users_role")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model claim {
+  claim_id          Int      @id @default(autoincrement())
+  claim_type        String   @db.VarChar(20)
+  claim_description String?
+  amount            Decimal  @db.Decimal(10, 2)
+  claim_date        DateTime @db.Date
+  status            String   @default("pending") @db.VarChar(20)
+  attachment        String?  @db.VarChar(500)
+  submitted_on      DateTime @default(now()) @db.Timestamptz(6)
+  approved_amount   Decimal? @db.Decimal(10, 2)
+  remarks           String?
+  user_id           Int
+  updated_at        DateTime @default(now()) @db.Timestamptz(6)
+  users             users    @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_claim_user")
+
+  @@index([claim_date], map: "idx_claim_date")
+  @@index([status], map: "idx_claim_status")
+  @@index([user_id], map: "idx_claim_user_id")
 }
