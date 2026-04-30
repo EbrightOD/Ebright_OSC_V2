@@ -25,7 +25,7 @@ export default function AppShell({ children, email, role, name }: AppShellProps)
           role={role}
           name={name}
         />
-        <main className="flex-1 overflow-y-auto">{children}</main>
+        <main className="flex-1 overflow-y-auto bg-slate-50">{children}</main>
       </div>
     </div>
   );
