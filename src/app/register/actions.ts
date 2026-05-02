@@ -12,11 +12,39 @@ export interface RegisterResult {
   claimed?: boolean;
 }
 
+export interface EmailCheckResult {
+  ok: boolean;
+  error?: string;
+  status?: "claim" | "new";
+  email?: string;
+}
+
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function s(formData: FormData, key: string): string {
   const v = formData.get(key);
   return typeof v === "string" ? v.trim() : "";
+}
+
+export async function checkEmail(_: EmailCheckResult | null, formData: FormData): Promise<EmailCheckResult> {
+  const email = s(formData, "email").toLowerCase();
+
+  if (!email) return { ok: false, error: "Email is required." };
+  if (!EMAIL_RE.test(email)) return { ok: false, error: "Please enter a valid email address." };
+
+  const existing = await prisma.users.findUnique({
+    where: { email },
+    select: { user_id: true, password: true },
+  });
+
+  if (existing) {
+    if (existing.password !== null) {
+      return { ok: false, error: "An account with this email already exists. Please sign in." };
+    }
+    return { ok: true, status: "claim", email };
+  }
+
+  return { ok: true, status: "new", email };
 }
 
 export async function registerUser(_: RegisterResult | null, formData: FormData): Promise<RegisterResult> {

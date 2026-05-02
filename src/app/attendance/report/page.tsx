@@ -35,6 +35,7 @@ interface PageProps {
     month?: string;
     branch?: string;
     dept?: string;
+    date?: string;
   }>;
 }
 
@@ -140,19 +141,37 @@ export default async function AttendanceReportPage({ searchParams }: PageProps) 
     new Date().toLocaleString("en-US", { timeZone: "Asia/Kuala_Lumpur" }),
   );
   const defaultMonth = `${nowMyt.getFullYear()}-${String(nowMyt.getMonth() + 1).padStart(2, "0")}`;
-  const monthStr = /^\d{4}-\d{2}$/.test(sp.month ?? "")
-    ? sp.month!
-    : defaultMonth;
+
+  // Optional single-day filter (?date=YYYY-MM-DD). When valid, narrows the
+  // report to that one day and aligns `monthStr` to its month.
+  let dateStr = "";
+  if (sp.date && /^\d{4}-\d{2}-\d{2}$/.test(sp.date)) {
+    const probe = new Date(sp.date + "T00:00:00Z");
+    if (!isNaN(probe.getTime()) && probe.toISOString().slice(0, 10) === sp.date) {
+      dateStr = sp.date;
+    }
+  }
+
+  const monthStr = dateStr
+    ? dateStr.slice(0, 7)
+    : /^\d{4}-\d{2}$/.test(sp.month ?? "")
+      ? sp.month!
+      : defaultMonth;
   const [year, month] = monthStr.split("-").map(Number);
-  const monthStart = new Date(Date.UTC(year, month - 1, 1));
-  const monthEnd = new Date(Date.UTC(year, month, 0));
-  const daysInMonth = monthEnd.getUTCDate();
+
+  // Iteration window for row generation: a single day if `dateStr` is set,
+  // otherwise the whole month.
+  const lastDayOfMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const startDay   = dateStr ? Number(dateStr.slice(8, 10)) : 1;
+  const endDay     = dateStr ? Number(dateStr.slice(8, 10)) : lastDayOfMonth;
+  const queryStart = new Date(Date.UTC(year, month - 1, startDay));
+  const queryEnd   = new Date(Date.UTC(year, month - 1, endDay));
 
   const attendance = selected
     ? await prisma.attendance.findMany({
         where: {
           user_id: selected.user_id,
-          date: { gte: monthStart, lte: monthEnd },
+          date: { gte: queryStart, lte: queryEnd },
         },
         select: {
           date: true,
@@ -182,7 +201,7 @@ export default async function AttendanceReportPage({ searchParams }: PageProps) 
   let totalSeconds = 0;
 
   const rows: DayRow[] = [];
-  for (let d = 1; d <= daysInMonth; d++) {
+  for (let d = startDay; d <= endDay; d++) {
     const date = new Date(Date.UTC(year, month - 1, d));
     const isoDate = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
     const att = attMap.get(isoDate);
@@ -256,6 +275,16 @@ export default async function AttendanceReportPage({ searchParams }: PageProps) 
     year: "numeric",
   });
 
+  const dateLabel = dateStr
+    ? new Date(dateStr + "T00:00:00Z").toLocaleString("en-US", {
+        weekday: "short",
+        day:     "numeric",
+        month:   "short",
+        year:    "numeric",
+        timeZone: "UTC",
+      })
+    : null;
+
   const employeeContext: EmployeeContext | null = selected
     ? {
         userId: selected.user_id,
@@ -292,6 +321,8 @@ export default async function AttendanceReportPage({ searchParams }: PageProps) 
         selectedEmployeeId={selected?.user_id ?? null}
         selectedMonth={monthStr}
         monthLabel={monthLabel}
+        selectedDate={dateStr}
+        dateLabel={dateLabel}
         restrictToSelf={restrictToSelf}
         summary={{
           present: presentCount,

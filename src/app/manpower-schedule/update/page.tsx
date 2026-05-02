@@ -1,15 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { redirect } from "next/navigation";
 import { format, parseISO } from "date-fns";
-import { Home as HomeIcon, ChevronRight } from "lucide-react";
+import { Home as HomeIcon, ChevronRight, RefreshCw } from "lucide-react";
 import AppShell from "@/app/components/AppShell";
 import { ALL_BRANCHES } from "@/lib/manpowerUtils";
-
-// ─── Demo records (no backend) ────────────────────────────────────────────────
 
 interface ScheduleRecord {
   id: string;
@@ -18,20 +17,6 @@ interface ScheduleRecord {
   endDate: string;
   status: "Finalized" | "Updated";
 }
-
-const DEMO_RECORDS: ScheduleRecord[] = [
-  { id: "r1",  branch: "Ampang",            startDate: "2026-04-06", endDate: "2026-04-12", status: "Finalized" },
-  { id: "r2",  branch: "Bandar Seri Putra", startDate: "2026-04-06", endDate: "2026-04-12", status: "Updated"  },
-  { id: "r3",  branch: "Klang",             startDate: "2026-04-06", endDate: "2026-04-12", status: "Finalized" },
-  { id: "r4",  branch: "Ampang",            startDate: "2026-04-13", endDate: "2026-04-19", status: "Finalized" },
-  { id: "r5",  branch: "Setia Alam",        startDate: "2026-04-13", endDate: "2026-04-19", status: "Updated"  },
-  { id: "r6",  branch: "Ampang",            startDate: "2026-03-30", endDate: "2026-04-05", status: "Finalized" },
-  { id: "r7",  branch: "Klang",             startDate: "2026-03-23", endDate: "2026-03-29", status: "Finalized" },
-  { id: "r8",  branch: "Bandar Seri Putra", startDate: "2026-02-09", endDate: "2026-02-15", status: "Finalized" },
-  { id: "r9",  branch: "Ampang",            startDate: "2026-01-12", endDate: "2026-01-18", status: "Finalized" },
-  { id: "r10", branch: "Klang",             startDate: "2025-12-15", endDate: "2025-12-21", status: "Finalized" },
-  { id: "r11", branch: "Setia Alam",        startDate: "2025-11-03", endDate: "2025-11-09", status: "Finalized" },
-];
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -45,106 +30,60 @@ const MONTH_SHORT = [
 // ─── Page Content ─────────────────────────────────────────────────────────────
 
 function UpdateScheduleContent() {
-  const [selectedRecord, setSelectedRecord] = useState<ScheduleRecord | null>(null);
+  const router = useRouter();
   const [filterBranch, setFilterBranch] = useState<string>("");
   const [drillYear, setDrillYear] = useState<string | null>(null);
   const [drillMonth, setDrillMonth] = useState<number | null>(null);
 
-  const filteredHistory = useMemo(
-    () => DEMO_RECORDS.filter(r => !filterBranch || r.branch === filterBranch),
-    [filterBranch],
-  );
+  const [records, setRecords] = useState<ScheduleRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // ─── Detail view (record selected) ──────────────────────────────────────────
-  if (selectedRecord) {
-    return (
-      <div className="min-h-full bg-slate-50">
-        <div className="max-w-7xl mx-auto px-6 pt-4 pb-12">
-          <nav
-            aria-label="Breadcrumb"
-            className="flex items-center gap-2 text-sm text-slate-500 mb-6 flex-wrap"
-          >
-            <Link
-              href="/home"
-              className="flex items-center gap-1 hover:text-slate-900 transition-colors"
-            >
-              <HomeIcon className="w-4 h-4" aria-hidden="true" />
-              <span>Home</span>
-            </Link>
-            <ChevronRight className="w-4 h-4 text-slate-400" aria-hidden="true" />
-            <Link href="/dashboards/hrms" className="hover:text-slate-900 transition-colors">
-              HRMS
-            </Link>
-            <ChevronRight className="w-4 h-4 text-slate-400" aria-hidden="true" />
-            <Link href="/manpower-schedule" className="hover:text-slate-900 transition-colors">
-              Manpower Planning
-            </Link>
-            <ChevronRight className="w-4 h-4 text-slate-400" aria-hidden="true" />
-            <button
-              onClick={() => setSelectedRecord(null)}
-              className="hover:text-slate-900 transition-colors"
-            >
-              Update Manpower Schedule
-            </button>
-            <ChevronRight className="w-4 h-4 text-slate-400" aria-hidden="true" />
-            <span className="text-slate-900 font-medium">
-              {selectedRecord.branch}
-              <span className="text-slate-500 font-normal">
-                {" "}
-                ({format(parseISO(selectedRecord.startDate), "dd MMM yyyy")} –{" "}
-                {format(parseISO(selectedRecord.endDate), "dd MMM yyyy")})
-              </span>
-            </span>
-          </nav>
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/schedules");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (cancelled) return;
+        if (!data.success) {
+          setError(data.error ?? "Failed to load schedules");
+          return;
+        }
+        const mapped: ScheduleRecord[] = data.schedules.map((s: ScheduleRecord) => ({
+          id: s.id,
+          branch: s.branch,
+          startDate: s.startDate,
+          endDate: s.endDate,
+          status: (s.status as ScheduleRecord["status"]) ?? "Finalized",
+        }));
+        setRecords(mapped);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-          <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-            <button
-              onClick={() => setSelectedRecord(null)}
-              className="bg-slate-200 text-slate-700 hover:bg-slate-300 px-6 py-3 rounded-xl font-bold uppercase transition-colors flex items-center gap-2 shadow-sm"
-            >
-              ← Back to List
-            </button>
-            <div className="flex items-center gap-3">
-              <button className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-xl text-sm font-black uppercase shadow-md transition-colors flex items-center gap-2">
-                + Add Employee
-              </button>
-              <button className="bg-orange-600 hover:bg-orange-700 text-white px-8 py-3 rounded-xl text-sm font-black uppercase shadow-md transition-colors flex items-center gap-2">
-                <span>💾</span> Save Adjustments
-              </button>
-            </div>
-          </div>
-
-          {/* Placeholder body — visual only */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 text-center">
-            <h2 className="text-2xl font-black uppercase tracking-tight text-slate-800 mb-2">
-              Updating: {selectedRecord.branch}
-            </h2>
-            <p className="text-sm text-slate-500 mb-8">
-              Planning vs Actual side-by-side grid would render here. Backend wiring pending.
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-8">
-              <div className="border-2 border-dashed border-slate-300 rounded-xl p-8">
-                <div className="bg-slate-500 text-white text-xs font-black uppercase tracking-widest px-3 py-1.5 rounded inline-block mb-3">
-                  Planning (read-only)
-                </div>
-                <p className="text-xs text-slate-400 italic">
-                  Original planned schedule for the week
-                </p>
-              </div>
-              <div className="border-2 border-dashed border-orange-300 rounded-xl p-8">
-                <div className="bg-orange-600 text-white text-xs font-black uppercase tracking-widest px-3 py-1.5 rounded inline-block mb-3">
-                  Actual (editable)
-                </div>
-                <p className="text-xs text-orange-400 italic">
-                  Edit actual assignments after the fact
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+  function openRecord(r: ScheduleRecord) {
+    const params = new URLSearchParams({
+      branch: r.branch,
+      start: r.startDate,
+      end: r.endDate,
+      mode: "update",
+    });
+    router.push(`/manpower-schedule/plan-new-week/grid?${params.toString()}`);
   }
+
+  const filteredHistory = useMemo(
+    () => records.filter(r => !filterBranch || r.branch === filterBranch),
+    [records, filterBranch],
+  );
 
   // ─── List view ──────────────────────────────────────────────────────────────
 
@@ -204,7 +143,7 @@ function UpdateScheduleContent() {
         {/* Page heading */}
         <header className="mb-8 flex items-start gap-4">
           <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center shrink-0">
-            <span className="text-2xl">🔄</span>
+            <RefreshCw className="w-6 h-6 text-amber-600" aria-hidden="true" />
           </div>
           <div>
             <p className="text-xs font-medium uppercase tracking-[0.18em] text-amber-600 mb-1">
@@ -241,7 +180,16 @@ function UpdateScheduleContent() {
         </div>
 
         {/* List body */}
-        {drillYear !== null && drillMonth !== null ? (
+        {loading ? (
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 text-center">
+            <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-slate-500 font-medium">Loading schedules...</p>
+          </div>
+        ) : error ? (
+          <div className="bg-red-50 border border-red-200 rounded-2xl p-6 text-center">
+            <p className="text-red-600 font-medium">{error}</p>
+          </div>
+        ) : drillYear !== null && drillMonth !== null ? (
           <div>
             <div className="flex items-center gap-3 mb-5">
               <button
@@ -273,7 +221,7 @@ function UpdateScheduleContent() {
                         weekRecs.map(record => (
                           <button
                             key={record.id}
-                            onClick={() => setSelectedRecord(record)}
+                            onClick={() => openRecord(record)}
                             className="text-left bg-orange-50 hover:bg-orange-100 border border-orange-200 hover:border-orange-300 rounded-xl px-4 py-3 transition-colors min-w-[160px]"
                           >
                             <div className="font-black text-sm text-orange-800 uppercase tracking-wide">

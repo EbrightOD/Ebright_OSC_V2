@@ -17,6 +17,7 @@ import {
   Info,
   Search,
   RefreshCw,
+  Calendar as CalendarIcon,
 } from "lucide-react";
 
 export type BranchOption = {
@@ -45,6 +46,7 @@ export type AttendanceRow = {
 export type SummaryData = {
   branches: BranchOption[];
   selectedBranch: BranchOption | null;
+  selectedDate: string; // "YYYY-MM-DD" in MYT
   counts: {
     scanned: number;
     currentlyIn: number;
@@ -95,15 +97,37 @@ export default function AttendanceSummaryView({ data }: { data: SummaryData }) {
   const selectedBranchId = data.selectedBranch?.branch_id ?? null;
   const isAllBranches = data.selectedBranch === null;
 
+  // Compute today's MYT date so we can hide the "date=" param when the user
+  // picks today (cleaner URL).
+  const todayIso = useMemo(() => {
+    const myt = new Date(Date.now() + 8 * 60 * 60_000);
+    return `${myt.getUTCFullYear()}-${String(myt.getUTCMonth() + 1).padStart(2, "0")}-${String(myt.getUTCDate()).padStart(2, "0")}`;
+  }, []);
+
+  const buildPath = (branch: string | null, date: string): string => {
+    const params = new URLSearchParams();
+    if (branch && branch !== "all") params.set("branch", branch);
+    if (date && date !== todayIso) params.set("date", date);
+    const qs = params.toString();
+    return qs ? `/attendance/summary?${qs}` : "/attendance/summary";
+  };
+
   const onChangeBranch = (value: string) => {
     startTransition(() => {
-      const path =
-        value === "all"
-          ? "/attendance/summary"
-          : `/attendance/summary?branch=${value}`;
-      router.replace(path);
+      router.replace(buildPath(value, data.selectedDate));
     });
   };
+
+  const onChangeDate = (value: string) => {
+    if (!value) return;
+    startTransition(() => {
+      router.replace(
+        buildPath(selectedBranchId === null ? "all" : String(selectedBranchId), value),
+      );
+    });
+  };
+
+  const isToday = data.selectedDate === todayIso;
 
   // Toggle: clicking the active card clears the filter
   const onSelectStatus = (status: StatusFilter) => {
@@ -136,6 +160,18 @@ export default function AttendanceSummaryView({ data }: { data: SummaryData }) {
       : 0;
 
   const todayStr = DATE_FMT.format(now ?? new Date(0));
+
+  // Friendly label for the selected date (e.g. "Friday, 25 April 2026").
+  // For non-"today" dates, format from selectedDate directly so it's stable.
+  const selectedDateLabel = useMemo(() => {
+    if (isToday) return todayStr;
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(data.selectedDate);
+    if (!m) return data.selectedDate;
+    const [, y, mo, d] = m;
+    return DATE_FMT.format(
+      new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d), 4, 0, 0)),
+    );
+  }, [isToday, todayStr, data.selectedDate]);
   const lastSyncedStr = data.lastSyncedIso
     ? TIME_FMT.format(new Date(data.lastSyncedIso))
     : "—";
@@ -187,14 +223,21 @@ export default function AttendanceSummaryView({ data }: { data: SummaryData }) {
                 </span>
               </div>
               <h1 className="text-3xl font-bold text-slate-800 tracking-tight">
-                Today&rsquo;s Attendance
+                {isToday ? "Today's Attendance" : "Attendance"}
               </h1>
               <p className="mt-1.5 text-sm font-medium text-slate-500">
-                {todayStr} · {selectedBranch?.branch_name ?? "All branches"}
+                {selectedDateLabel} · {selectedBranch?.branch_name ?? "All branches"}
               </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              <DatePicker
+                value={data.selectedDate}
+                onChange={onChangeDate}
+                isPending={isPending}
+                isToday={isToday}
+                onJumpToToday={() => onChangeDate(todayIso)}
+              />
               <BranchSelector
                 branches={data.branches}
                 selectedId={selectedBranchId}
@@ -458,6 +501,48 @@ function StatCard({
   );
 }
 
+function DatePicker({
+  value,
+  onChange,
+  isPending,
+  isToday,
+  onJumpToToday,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  isPending: boolean;
+  isToday: boolean;
+  onJumpToToday: () => void;
+}) {
+  return (
+    <div className={`inline-flex items-center gap-1 ${isPending ? "opacity-60" : ""}`}>
+      <label
+        className={`inline-flex items-center h-10 rounded-xl border border-slate-200 bg-white px-3 gap-2 text-sm text-slate-700 focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 transition-all duration-200`}
+      >
+        <CalendarIcon className="w-4 h-4 text-slate-500" aria-hidden="true" />
+        <input
+          type="date"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={isPending}
+          className="bg-transparent text-sm font-semibold text-slate-800 focus:outline-none disabled:cursor-wait"
+          aria-label="Select date"
+        />
+      </label>
+      {!isToday && (
+        <button
+          type="button"
+          onClick={onJumpToToday}
+          disabled={isPending}
+          className="h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs font-bold uppercase tracking-wider text-indigo-600 hover:bg-indigo-50 hover:border-indigo-300 transition-colors disabled:opacity-60"
+        >
+          Today
+        </button>
+      )}
+    </div>
+  );
+}
+
 function BranchSelector({
   branches,
   selectedId,
@@ -665,7 +750,7 @@ function StatusPill({
 
   return (
     <span
-      className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${styles}`}
+      className={`inline-flex items-center whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ${styles}`}
     >
       {label}
     </span>

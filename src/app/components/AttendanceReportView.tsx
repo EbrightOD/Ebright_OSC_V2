@@ -8,6 +8,8 @@ import {
   ChevronRight,
   ChevronDown,
   ChevronLeft,
+  Calendar as CalendarIcon,
+  X,
 } from "lucide-react";
 
 export interface BranchOption {
@@ -70,6 +72,8 @@ interface Props {
   selectedEmployeeId: number | null;
   selectedMonth: string;
   monthLabel: string;
+  selectedDate: string;        // "" = no day filter; otherwise YYYY-MM-DD
+  dateLabel: string | null;
   restrictToSelf?: boolean;
   summary: Summary;
 }
@@ -125,6 +129,8 @@ export default function AttendanceReportView({
   selectedEmployeeId,
   selectedMonth,
   monthLabel,
+  selectedDate,
+  dateLabel,
   restrictToSelf = false,
   summary,
 }: Props) {
@@ -137,6 +143,7 @@ export default function AttendanceReportView({
     if (selectedDept) params.set("dept", selectedDept);
     if (selectedEmployeeId != null) params.set("employeeId", String(selectedEmployeeId));
     if (selectedMonth) params.set("month", selectedMonth);
+    if (selectedDate) params.set("date", selectedDate);
     for (const [k, v] of Object.entries(changes)) {
       if (v === null || v === "") params.delete(k);
       else params.set(k, v);
@@ -144,6 +151,22 @@ export default function AttendanceReportView({
     startTransition(() => {
       router.replace(`/attendance/report?${params.toString()}`);
     });
+  };
+
+  // Picking a date aligns the month to it and supersedes any month filter.
+  // Clearing the date keeps the same month visible.
+  const onDateChange = (iso: string) => {
+    if (!iso) {
+      updateParams({ date: null });
+      return;
+    }
+    updateParams({ date: iso, month: iso.slice(0, 7) });
+  };
+
+  // Picking a different month should clear any single-day filter so the user
+  // sees the whole month again.
+  const onMonthChange = (m: string | null) => {
+    updateParams({ month: m, date: null });
   };
 
   const branchLabel =
@@ -253,12 +276,12 @@ export default function AttendanceReportView({
           <MonthPill
             label="Month"
             value={monthLabel}
-            onPrev={prevMonth ? () => updateParams({ month: prevMonth }) : null}
-            onNext={nextMonth ? () => updateParams({ month: nextMonth }) : null}
+            onPrev={prevMonth ? () => onMonthChange(prevMonth) : null}
+            onNext={nextMonth ? () => onMonthChange(nextMonth) : null}
           >
             <select
               value={selectedMonth}
-              onChange={(e) => updateParams({ month: e.target.value || null })}
+              onChange={(e) => onMonthChange(e.target.value || null)}
             >
               {months.map((m) => (
                 <option key={m.value} value={m.value}>
@@ -267,6 +290,13 @@ export default function AttendanceReportView({
               ))}
             </select>
           </MonthPill>
+
+          <DatePill
+            label="Date"
+            value={selectedDate}
+            displayLabel={dateLabel ?? "All days"}
+            onChange={onDateChange}
+          />
         </div>
 
         {/* Hero card */}
@@ -302,9 +332,11 @@ export default function AttendanceReportView({
               />
             </div>
             <div className="mt-2.5 flex items-center justify-between text-xs text-slate-500">
-              <span>{attendanceRate}% attendance rate this month</span>
               <span>
-                {summary.present} / {workingDays} working days
+                {attendanceRate}% attendance rate {selectedDate ? "for selected day" : "this month"}
+              </span>
+              <span>
+                {summary.present} / {workingDays} {selectedDate ? "day" : "working days"}
               </span>
             </div>
           </div>
@@ -463,6 +495,54 @@ function MonthPill({
       >
         <ChevronRight className="w-4 h-4 text-slate-500" aria-hidden="true" />
       </button>
+    </div>
+  );
+}
+
+function DatePill({
+  label,
+  value,
+  displayLabel,
+  onChange,
+}: {
+  label: string;
+  value: string;          // "" or "YYYY-MM-DD"
+  displayLabel: string;   // e.g. "All days" or "Sat, 2 May 2026"
+  onChange: (iso: string) => void;
+}) {
+  const isSet = !!value;
+  return (
+    <div className="inline-flex items-stretch rounded-lg border border-slate-200 bg-white overflow-hidden hover:border-slate-300 focus-within:border-slate-400 focus-within:ring-2 focus-within:ring-slate-100 transition">
+      <label className="group relative inline-flex items-stretch cursor-pointer">
+        <span className="px-3 self-center text-[10px] font-semibold uppercase tracking-wider text-slate-500 bg-slate-50/80 border-r border-slate-200 py-2.5">
+          {label}
+        </span>
+        <span className="px-3 py-2 inline-flex items-center gap-2">
+          <CalendarIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" aria-hidden="true" />
+          <span className={`text-sm font-medium max-w-[200px] truncate ${isSet ? "text-slate-900" : "text-slate-500"}`}>
+            {displayLabel}
+          </span>
+          {!isSet && <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" aria-hidden="true" />}
+        </span>
+        <input
+          type="date"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          aria-label="Pick a date"
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+        />
+      </label>
+      {isSet && (
+        <button
+          type="button"
+          onClick={() => onChange("")}
+          className="px-2 hover:bg-slate-50 border-l border-slate-200 transition-colors"
+          aria-label="Clear date filter"
+          title="Clear date filter"
+        >
+          <X className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" />
+        </button>
+      )}
     </div>
   );
 }

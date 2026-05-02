@@ -16,6 +16,11 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Ebright HR System",
   description: "Ebright HR Management System",
+  icons: {
+    icon: "/ebright-icon.png",
+    shortcut: "/ebright-icon.png",
+    apple: "/ebright-icon.png",
+  },
 };
 
 export default function RootLayout({

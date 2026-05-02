@@ -3,14 +3,10 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/nextauth";
 import { prisma } from "@/lib/prisma";
 
-// Roles that can be assigned in the manpower grid (BM also fills the
-// Manager-on-Duty cell). v2 stores role_id rather than the old free-text role,
-// so we resolve role IDs at runtime from the `role` table.
-const ASSIGNABLE_ROLE_TYPES = ["BM", "FT COACH", "PT COACH"];
-
-// Shape consumed by the planning page: { id, name, branch (full name), role }.
+// Shape consumed by the planning grid: { id, name, branch (full name), role }.
 // `role` follows the old convention where a branch manager is rendered as
-// `branch_manager_<lowercased first 3 letters of branch name>`.
+// `branch_manager_<lowercased first 3 letters of branch name>` so the Manager
+// on Duty dropdown can pick them out. Everyone else gets role=null.
 interface StaffPayload {
   id: number;
   name: string;
@@ -18,32 +14,56 @@ interface StaffPayload {
   role: string | null;
 }
 
-export async function GET() {
+const MANAGER_POSITIONS = new Set(["BM", "BRANCH MANAGER", "MANAGER"]);
+
+// Positions that can be picked in the manpower grid. Anything else
+// (e.g. "INTERN", "ADMIN", "PART TIME" without "COACH") is excluded.
+const ASSIGNABLE_POSITIONS = new Set([
+  "BM",
+  "BRANCH MANAGER",
+  "MANAGER",
+  "FT COACH",
+  "PT COACH",
+  "FULL TIME COACH",
+  "PART TIME COACH",
+]);
+
+export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
   }
 
   try {
-    // Resolve assignable role IDs once.
-    const roles = await prisma.role.findMany({
-      where: { role_type: { in: ASSIGNABLE_ROLE_TYPES } },
-      select: { role_id: true, role_type: true },
-    });
-    const roleIds = roles.map((r) => r.role_id);
-    if (roleIds.length === 0) return NextResponse.json([]);
+    const url = new URL(req.url);
+    const branchIdParam = url.searchParams.get("branch_id");
+    const branchNameParam = url.searchParams.get("branch");
 
-    // Pull active staff with at least one employment row that has a branch.
-    // We project the latest employment (highest employment_id) so transfers
-    // surface immediately.
+    // Resolve an optional branch filter at the SQL layer.
+    let branchIdFilter: number | undefined;
+    if (branchIdParam && !Number.isNaN(Number(branchIdParam))) {
+      branchIdFilter = Number(branchIdParam);
+    } else if (branchNameParam) {
+      const b = await prisma.branch.findFirst({
+        where: { branch_name: branchNameParam },
+        select: { branch_id: true },
+      });
+      if (b) branchIdFilter = b.branch_id;
+      else return NextResponse.json([]);
+    }
+
+    // Pull every active employee with a branch — no position filter, so all
+    // employees of the requested branch surface in the grid dropdowns.
+    // Latest employment wins (transfers are reflected immediately).
     const users = await prisma.users.findMany({
       where: {
         status: "active",
         deleted_at: null,
-        // We don't filter role_id at the user level because role_id on `users`
-        // is the auth role (e.g. STAFF=4), not the position. The BM/coach
-        // distinction lives on `employment.position`.
-        employment: { some: { branch_id: { not: null } } },
+        employment: {
+          some: branchIdFilter
+            ? { branch_id: branchIdFilter }
+            : { branch_id: { not: null } },
+        },
       },
       select: {
         user_id: true,
@@ -51,6 +71,7 @@ export async function GET() {
         employment: {
           orderBy: { employment_id: "desc" },
           take: 1,
+          where: branchIdFilter ? { branch_id: branchIdFilter } : undefined,
           select: {
             position: true,
             branch: { select: { branch_name: true } },
@@ -62,18 +83,18 @@ export async function GET() {
     const payload: StaffPayload[] = users.flatMap((u) => {
       const emp = u.employment[0];
       if (!emp?.branch?.branch_name) return [];
-      const position = emp.position?.toUpperCase().trim() ?? "";
-      // Only include people who can actually be assigned in the grid.
-      if (!ASSIGNABLE_ROLE_TYPES.includes(position)) return [];
       const displayName =
         u.user_profile?.nick_name?.trim() ||
         u.user_profile?.full_name?.trim();
       if (!displayName) return [];
+      const position = emp.position?.toUpperCase().trim() ?? "";
+      // Only BM / FT COACH / PT COACH (and variants). Excludes intern, admin,
+      // and any other non-assignable role.
+      if (!ASSIGNABLE_POSITIONS.has(position)) return [];
       const branchName = emp.branch.branch_name;
-      const role =
-        position === "BM"
-          ? `branch_manager_${branchName.substring(0, 3).toLowerCase()}`
-          : null;
+      const role = MANAGER_POSITIONS.has(position)
+        ? `branch_manager_${branchName.substring(0, 3).toLowerCase()}`
+        : null;
       return [
         {
           id: u.user_id,
