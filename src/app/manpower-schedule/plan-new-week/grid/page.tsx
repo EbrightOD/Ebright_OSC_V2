@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { redirect } from "next/navigation";
@@ -15,32 +15,34 @@ import {
   getWorkingDaysForBranch,
   isOpeningClosingSlot,
   isManagerOnDutySlot,
+  isAdminSlot,
   getStaffColorByIndex,
   SELECT_ARROW_WHITE,
   SELECT_ARROW_DARK,
 } from "@/lib/manpowerUtils";
 
-// ─── Demo data (no backend yet) ───────────────────────────────────────────────
+// ─── API shapes ───────────────────────────────────────────────────────────────
 
-const DEMO_STAFF = [
-  "AISHAH NURFITRI",
-  "AIDIL",
-  "FARHAN ZAKI",
-  "NUR AINA",
-  "HAKIM HASSAN",
-  "SARAH IZZATI",
-  "DANISH HARITH",
-  "AMIRA SOFEA",
-];
+interface StaffPayload {
+  id: number;
+  name: string;
+  branch: string;
+  role: string | null; // 'branch_manager_xxx' or null
+}
 
-const DEMO_MANAGERS = ["SITI HAJAR", "MOHD AZHAR"];
+interface ScheduleWire {
+  id: string;
+  branch: string;
+  startDate: string;
+  endDate: string;
+  selections: Record<string, string>;
+  notes: Record<string, string>;
+  originalSelections?: Record<string, string>;
+  originalNotes?: Record<string, string>;
+  status?: string;
+}
 
-const SUMMARY_DATA = DEMO_STAFF.map(name => ({
-  name,
-  coachHrs: 0,
-  execHrs: 0,
-  total: 0,
-}));
+type Mode = "create" | "update" | "view";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -137,11 +139,16 @@ function PlanNewWeekGridContent() {
   const branch = searchParams.get("branch") ?? "Bandar Seri Putra";
   const startStr = searchParams.get("start");
   const endStr = searchParams.get("end");
+  const mode: Mode = (searchParams.get("mode") as Mode) || "create";
+  const isReadOnly = mode === "view";
 
   const workingDays = useMemo(() => getWorkingDaysForBranch(branch), [branch]);
   const [selectedDay, setSelectedDay] = useState<string>(workingDays[0] ?? "Thursday");
   const [editingDays, setEditingDays] = useState<Record<string, boolean>>(() =>
-    workingDays.reduce((acc, d) => ({ ...acc, [d]: true }), {} as Record<string, boolean>)
+    workingDays.reduce(
+      (acc, d) => ({ ...acc, [d]: !isReadOnly }),
+      {} as Record<string, boolean>,
+    ),
   );
   const [selections, setSelections] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
@@ -151,12 +158,190 @@ function PlanNewWeekGridContent() {
   const [newEmployeeName, setNewEmployeeName] = useState("");
   const [newEmployeePosition, setNewEmployeePosition] = useState("Part Time");
 
-  const isEditing = !!editingDays[selectedDay];
+  // Live data
+  const [staffByBranch, setStaffByBranch] = useState<Record<string, string[]>>({});
+  const [managersByBranch, setManagersByBranch] = useState<Record<string, string[]>>({});
+  const [loading, setLoading] = useState(true);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Fetch staff (for dropdowns) + existing schedule (if mode=update/view)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        // Pull EVERY branch's staff in one shot. The grid lets a column be
+        // assigned to a coach from another branch (replacement), so we need
+        // the full directory grouped by branch — not just the selected one.
+        const [staffRes, schedRes] = await Promise.all([
+          fetch(`/api/branch-staff`),
+          mode !== "create" ? fetch("/api/schedules") : Promise.resolve(null),
+        ]);
+
+        // Staff
+        if (staffRes.ok) {
+          const list: StaffPayload[] = await staffRes.json();
+          if (cancelled) return;
+          // Managers go ONLY into the Manager on Duty dropdown.
+          // Coach/Exec dropdowns get the rest (PT/FT coaches).
+          const staff: Record<string, string[]> = {};
+          const mgrs: Record<string, string[]> = {};
+          list.forEach(s => {
+            if (!s.branch) return;
+            const isManager = !!s.role && s.role.startsWith("branch_manager");
+            if (isManager) {
+              (mgrs[s.branch] ??= []).push(s.name);
+            } else {
+              (staff[s.branch] ??= []).push(s.name);
+            }
+          });
+          setStaffByBranch(staff);
+          setManagersByBranch(mgrs);
+        }
+
+        // Existing schedule
+        if (schedRes && schedRes.ok) {
+          const data = await schedRes.json();
+          if (cancelled) return;
+          if (data.success && Array.isArray(data.schedules)) {
+            const match = data.schedules.find(
+              (s: ScheduleWire) =>
+                s.branch === branch && s.startDate === startStr,
+            );
+            if (match) {
+              setSelections((match.selections ?? {}) as Record<string, string>);
+              setNotes((match.notes ?? {}) as Record<string, string>);
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load grid data", err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [branch, startStr, mode]);
+
+  const ownStaff   = staffByBranch[branch] ?? [];
+  const ownManagers = managersByBranch[branch] ?? [];
+
+  const isEditing = !isReadOnly && !!editingDays[selectedDay];
   const day = selectedDay;
   const daySlots = getTimeSlotsForDay(day, branch);
 
+  // Compute weekly hours summary from current selections
+  const summaryData = useMemo(() => {
+    const stats: Record<string, { coachHrs: number; execHrs: number; total: number }> = {};
+    const allNames = Array.from(
+      new Set([
+        ...ownStaff,
+        ...Object.values(selections).filter(v => !!v && v !== "None"),
+      ]),
+    );
+    allNames.forEach(n => {
+      stats[n] = { coachHrs: 0, execHrs: 0, total: 0 };
+    });
+    workingDays.forEach(dayName => {
+      const isWeekend = dayName === "Saturday" || dayName === "Sunday";
+      const dailyTarget = isWeekend ? 10.5 : 5.0;
+      allNames.forEach(emp => {
+        let coach = 0;
+        let worked = false;
+        getTimeSlotsForDay(dayName, branch).forEach(slot => {
+          if (isOpeningClosingSlot(slot, branch)) return;
+          COLUMNS.forEach(col => {
+            if (selections[`${dayName}-${slot}-${col.id}`] === emp) {
+              worked = true;
+              if (col.type === "coach") {
+                coach += isAdminSlot(slot, branch) ? 0.25 : 1.25;
+              }
+            }
+          });
+        });
+        if (worked) {
+          stats[emp].coachHrs += coach;
+          stats[emp].execHrs += Math.max(0, dailyTarget - coach);
+          stats[emp].total = stats[emp].coachHrs + stats[emp].execHrs;
+        }
+      });
+    });
+    return Object.entries(stats)
+      .filter(([name, s]) => s.total > 0 || ownStaff.includes(name))
+      .map(([name, s]) => ({ name, ...s }));
+  }, [selections, ownStaff, workingDays, branch]);
+
+  async function handleFinalSubmit() {
+    if (!startStr || !endStr) return;
+    if (!confirm("Save this schedule to the database?")) return;
+    setSaveState("saving");
+    setErrorMsg(null);
+    try {
+      const res = await fetch("/api/schedules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: `${branch}_${startStr}`,
+          branch,
+          startDate: startStr,
+          endDate: endStr,
+          selections,
+          notes,
+          status: mode === "update" ? "Updated" : "Finalized",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error ?? "Save failed");
+      }
+      setSaveState("saved");
+      setTimeout(() => router.push("/manpower-schedule"), 1200);
+    } catch (err) {
+      setSaveState("error");
+      setErrorMsg(err instanceof Error ? err.message : "Save failed");
+    }
+  }
+
+  // Picking a name auto-fills the same column across every non-opening/closing
+  // slot of the day, but skips slots where the name is already used elsewhere
+  // (manager vs staff, other coach/exec column). Clearing only clears the one
+  // cell. Mirrors the old project's handleNameSelect behavior.
   function setCell(day: string, slot: string, colId: string, value: string) {
-    setSelections(p => ({ ...p, [`${day}-${slot}-${colId}`]: value }));
+    setSelections(prev => {
+      const next = { ...prev };
+      if (!value) {
+        delete next[`${day}-${slot}-${colId}`];
+        return next;
+      }
+
+      const daySlots = getTimeSlotsForDay(day, branch);
+      daySlots.forEach(s => {
+        if (isOpeningClosingSlot(s, branch)) return;
+
+        if (colId === "MANAGER") {
+          // Don't put someone in Manager if they're already a coach/exec for this slot
+          const usedAsStaff = COLUMNS.some(
+            c => next[`${day}-${s}-${c.id}`] === value,
+          );
+          if (usedAsStaff) return;
+        } else {
+          // Don't put someone in this column if they're already the manager for this slot
+          if (next[`${day}-${s}-MANAGER`] === value) return;
+          // Or already in another coach/exec column for this slot
+          const usedInOtherColumn = COLUMNS.filter(c => c.id !== colId).some(
+            c => next[`${day}-${s}-${c.id}`] === value,
+          );
+          if (usedInOtherColumn) return;
+        }
+
+        next[`${day}-${s}-${colId}`] = value;
+      });
+
+      return next;
+    });
   }
 
   function clearAllForDay(d: string) {
@@ -209,10 +394,20 @@ function PlanNewWeekGridContent() {
           </Link>
           <ChevronRight className="w-4 h-4 text-slate-400" aria-hidden="true" />
           <Link
-            href="/manpower-schedule/plan-new-week"
+            href={
+              mode === "update"
+                ? "/manpower-schedule/update"
+                : mode === "view"
+                ? "/manpower-schedule/archive"
+                : "/manpower-schedule/plan-new-week"
+            }
             className="hover:text-slate-900 transition-colors"
           >
-            Plan New Week
+            {mode === "update"
+              ? "Update Manpower Schedule"
+              : mode === "view"
+              ? "Archive Overview"
+              : "Plan New Week"}
           </Link>
           <ChevronRight className="w-4 h-4 text-slate-400" aria-hidden="true" />
           <span className="text-slate-900 font-medium">
@@ -407,29 +602,52 @@ function PlanNewWeekGridContent() {
 
                       {!isOpenClose && (
                         <td className="p-2 border-l align-middle bg-emerald-50 w-[180px]">
-                          {showManager ? (
-                            <select
-                              disabled={!isEditing}
-                              value={managerVal}
-                              onChange={e => setCell(day, slot, "MANAGER", e.target.value)}
-                              className={`w-full p-2 rounded text-center font-bold text-xs appearance-none transition-all ${
-                                managerVal
-                                  ? getStaffColorByIndex(managerVal, DEMO_MANAGERS)
-                                  : "border border-emerald-200 bg-white text-slate-700"
-                              }`}
-                              style={{
-                                backgroundImage: `url("${managerVal ? SELECT_ARROW_WHITE : SELECT_ARROW_DARK}")`,
-                                backgroundPosition: "right 0.3rem center",
-                                backgroundSize: "8px",
-                                backgroundRepeat: "no-repeat",
-                              }}
-                            >
-                              <option value="">-- Select --</option>
-                              {DEMO_MANAGERS.map(name => (
-                                <option key={name} value={name}>{name}</option>
-                              ))}
-                            </select>
-                          ) : (
+                          {showManager ? (() => {
+                            // Manager cell uses BMs from the replacement branch
+                            // when one is set on this day, otherwise own branch.
+                            const mgrReplBranch = managerReplacementBranch[day] ?? "";
+                            const mgrSourceBranch = mgrReplBranch || branch;
+                            const mgrList = managersByBranch[mgrSourceBranch] ?? [];
+                            return (
+                              <select
+                                disabled={!isEditing}
+                                value={managerVal}
+                                onChange={e => setCell(day, slot, "MANAGER", e.target.value)}
+                                className={`w-full p-2 rounded text-center font-bold text-xs appearance-none transition-all ${
+                                  managerVal
+                                    ? getStaffColorByIndex(managerVal, mgrList)
+                                    : "border border-emerald-200 bg-white text-slate-700"
+                                }`}
+                                style={{
+                                  backgroundImage: `url("${managerVal ? SELECT_ARROW_WHITE : SELECT_ARROW_DARK}")`,
+                                  backgroundPosition: "right 0.3rem center",
+                                  backgroundSize: "8px",
+                                  backgroundRepeat: "no-repeat",
+                                }}
+                              >
+                                <option value="">-- Select --</option>
+                                {mgrList.map(name => {
+                                  // Disable if this manager is already assigned
+                                  // as a coach/exec for the same slot.
+                                  const usedAsStaff = COLUMNS.some(
+                                    c =>
+                                      selections[`${day}-${slot}-${c.id}`] === name,
+                                  );
+                                  return (
+                                    <option
+                                      key={name}
+                                      value={name}
+                                      disabled={usedAsStaff && managerVal !== name}
+                                    >
+                                      {usedAsStaff && managerVal !== name
+                                        ? `${name} (assigned as staff)`
+                                        : name}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                            );
+                          })() : (
                             <div className="w-full h-[34px] rounded bg-emerald-100/50 border border-dashed border-emerald-200 flex items-center justify-center">
                               <span className="text-[9px] text-emerald-300 font-bold uppercase tracking-wider">—</span>
                             </div>
@@ -447,6 +665,22 @@ function PlanNewWeekGridContent() {
                         <>
                           {COLUMNS.map(col => {
                             const val = selections[`${day}-${slot}-${col.id}`] ?? "";
+                            // Coach/Exec cell uses PT/FT coaches from the
+                            // replacement branch when one is set for this
+                            // day+column, otherwise own branch.
+                            const colReplBranch =
+                              columnReplacementBranch[`${day}-${col.id}`] ?? "";
+                            const sourceBranch = colReplBranch || branch;
+                            const colStaff = staffByBranch[sourceBranch] ?? [];
+                            // Names already taken in this slot by Manager or
+                            // any other coach/exec column. Used to disable
+                            // duplicate picks within the slot.
+                            const namesUsedInSlot = new Set<string>([
+                              ...COLUMNS.filter(c => c.id !== col.id)
+                                .map(c => selections[`${day}-${slot}-${c.id}`])
+                                .filter((n): n is string => !!n),
+                              ...(managerVal ? [managerVal] : []),
+                            ]);
                             return (
                               <td
                                 key={col.id}
@@ -458,7 +692,7 @@ function PlanNewWeekGridContent() {
                                   onChange={e => setCell(day, slot, col.id, e.target.value)}
                                   className={`w-full p-2 rounded appearance-none text-center font-bold transition-all text-xs ${
                                     val
-                                      ? getStaffColorByIndex(val, DEMO_STAFF)
+                                      ? getStaffColorByIndex(val, colStaff)
                                       : "bg-white border border-slate-200 text-slate-400 hover:bg-slate-50"
                                   }`}
                                   style={{
@@ -469,8 +703,13 @@ function PlanNewWeekGridContent() {
                                   }}
                                 >
                                   <option value="">None</option>
-                                  {DEMO_STAFF.map(name => (
-                                    <option key={name} value={name} className="text-slate-800 font-bold">
+                                  {colStaff.map(name => (
+                                    <option
+                                      key={name}
+                                      value={name}
+                                      disabled={namesUsedInSlot.has(name) && val !== name}
+                                      className="text-slate-800 font-bold"
+                                    >
                                       {name}
                                     </option>
                                   ))}
@@ -502,13 +741,43 @@ function PlanNewWeekGridContent() {
           </div>
         </div>
 
-        <SummaryTable title="Weekly Hours Summary" data={SUMMARY_DATA} />
+        <SummaryTable title="Weekly Hours Summary" data={summaryData} />
 
-        <div className="mt-16 text-center pb-10">
-          <button className="bg-green-600 hover:bg-green-700 text-white px-20 py-5 rounded-2xl text-xl font-black shadow-xl uppercase tracking-widest transition-transform hover:scale-105">
-            🚀 Final Submit & Archive
-          </button>
-        </div>
+        {!isReadOnly && (
+          <div className="mt-16 text-center pb-10">
+            {errorMsg && (
+              <p className="text-sm font-bold text-red-600 mb-4">{errorMsg}</p>
+            )}
+            <button
+              onClick={handleFinalSubmit}
+              disabled={saveState === "saving" || saveState === "saved"}
+              className={`px-20 py-5 rounded-2xl text-xl font-black shadow-xl uppercase tracking-widest transition-transform hover:scale-105 ${
+                saveState === "saved"
+                  ? "bg-emerald-600 text-white"
+                  : "bg-green-600 hover:bg-green-700 text-white disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
+              }`}
+            >
+              {saveState === "saving" && "Saving..."}
+              {saveState === "saved" && "✓ Saved — Redirecting..."}
+              {(saveState === "idle" || saveState === "error") &&
+                (mode === "update" ? "💾 Save Adjustments" : "🚀 Final Submit & Archive")}
+            </button>
+          </div>
+        )}
+
+        {isReadOnly && (
+          <div className="mt-12 mx-auto max-w-md text-center bg-slate-800 text-white px-6 py-4 rounded-xl shadow-sm">
+            <span className="font-bold uppercase tracking-widest text-sm">
+              🔒 Read-Only View
+            </span>
+          </div>
+        )}
+
+        {loading && (
+          <div className="fixed bottom-6 right-6 bg-white border border-slate-200 shadow-lg rounded-xl px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-widest">
+            Loading...
+          </div>
+        )}
       </div>
 
       {/* Add Employee modal (visual only) */}

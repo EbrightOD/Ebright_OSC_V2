@@ -120,6 +120,22 @@ async function fetchTodayEvents(device: DeviceRow): Promise<ScanEvent[]> {
   return all;
 }
 
+// ─── Scanner-time parsing ────────────────────────────────────────────────────
+
+// Hikvision sometimes returns event timestamps without an explicit timezone
+// offset (e.g. "2026-05-02T08:42:51"). When that happens, JS's `new Date()`
+// uses the host's local timezone — which under Docker / Vercel is usually UTC,
+// not MYT. The scanner clock is set to MYT, so a naive timestamp is *always*
+// MYT. Anchor it explicitly to +08:00 before parsing so the absolute UTC
+// instant we store is correct regardless of where this code runs.
+const TZ_OFFSET_RX = /Z$|[+-]\d{2}:?\d{2}$/;
+
+export function parseScanTime(raw: string): Date {
+  const s = raw.trim();
+  if (TZ_OFFSET_RX.test(s)) return new Date(s);
+  return new Date(`${s}+08:00`);
+}
+
 // ─── DB write ────────────────────────────────────────────────────────────────
 
 async function writeEvent(
@@ -141,7 +157,7 @@ async function writeEvent(
     return "skipped";
   }
 
-  const scanTime = new Date(event.time);
+  const scanTime = parseScanTime(event.time);
   if (Number.isNaN(scanTime.getTime())) {
     console.warn(
       `[scanner-sync][${device.ip_address}] bad scan time: ${event.time}`,

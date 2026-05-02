@@ -154,27 +154,33 @@ model user_profile {
 }
 
 model users {
-  user_id                                        Int                 @id @default(autoincrement())
-  email                                          String              @unique @db.VarChar(255)
-  password                                       String?             @db.VarChar(255)
-  role_id                                        Int
-  status                                         String?             @default("active") @db.VarChar(50)
-  last_login                                     DateTime?           @db.Timestamptz(6)
-  created_at                                     DateTime            @default(now()) @db.Timestamptz(6)
-  updated_at                                     DateTime            @default(now()) @db.Timestamptz(6)
-  deleted_at                                     DateTime?           @db.Timestamptz(6)
-  attendance                                     attendance[]
-  attendance_log                                 attendance_log[]
-  bank_details                                   bank_details?
-  claim                                          claim[]
-  emergency_contact                              emergency_contact[]
-  employment                                     employment[]
-  leave_request_leave_request_approved_byTousers leave_request[]     @relation("leave_request_approved_byTousers")
-  leave_request_leave_request_user_idTousers     leave_request[]     @relation("leave_request_user_idTousers")
-  manpower_cost                                  manpower_cost[]
-  manpower_schedule                              manpower_schedule[]
-  user_profile                                   user_profile?
-  role                                           role                @relation(fields: [role_id], references: [role_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_users_role")
+  user_id                                                    Int                 @id @default(autoincrement())
+  email                                                      String              @unique @db.VarChar(255)
+  password                                                   String?             @db.VarChar(255)
+  role_id                                                    Int
+  status                                                     String?             @default("active") @db.VarChar(50)
+  last_login                                                 DateTime?           @db.Timestamptz(6)
+  created_at                                                 DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at                                                 DateTime            @default(now()) @db.Timestamptz(6)
+  deleted_at                                                 DateTime?           @db.Timestamptz(6)
+  attendance                                                 attendance[]
+  attendance_log                                             attendance_log[]
+  bank_details                                               bank_details?
+  claim                                                      claim[]
+  emergency_contact                                          emergency_contact[]
+  employment                                                 employment[]
+  induction_profile_induction_profile_buddy_user_idTousers   induction_profile[] @relation("induction_profile_buddy_user_idTousers")
+  induction_profile_induction_profile_created_byTousers      induction_profile[] @relation("induction_profile_created_byTousers")
+  induction_profile_induction_profile_user_idTousers         induction_profile?  @relation("induction_profile_user_idTousers")
+  induction_request_induction_request_triggered_by_idTousers induction_request[] @relation("induction_request_triggered_by_idTousers")
+  induction_request_induction_request_user_idTousers         induction_request?  @relation("induction_request_user_idTousers")
+  induction_step_induction_step_completed_byTousers          induction_step[]    @relation("induction_step_completed_byTousers")
+  induction_step_induction_step_responsible_user_idTousers   induction_step[]    @relation("induction_step_responsible_user_idTousers")
+  leave_request_leave_request_approved_byTousers             leave_request[]     @relation("leave_request_approved_byTousers")
+  leave_request_leave_request_user_idTousers                 leave_request[]     @relation("leave_request_user_idTousers")
+  manpower_schedule                                          manpower_schedule[]
+  user_profile                                               user_profile?
+  role                                                       role                @relation(fields: [role_id], references: [role_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_users_role")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -198,19 +204,6 @@ model claim {
   @@index([user_id], map: "idx_claim_user_id")
 }
 
-model manpower_cost {
-  manpower_cost_id Int      @id @default(autoincrement())
-  user_id          Int
-  date             DateTime @db.Date
-  hours            Decimal  @default(0) @db.Decimal(5, 2)
-  total            Decimal  @default(0) @db.Decimal(10, 2)
-  users            users    @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_manpower_cost_user")
-
-  @@unique([user_id, date], map: "uq_manpower_cost_user_date")
-  @@index([date], map: "idx_manpower_cost_date")
-  @@index([user_id, date(sort: Desc)], map: "idx_manpower_cost_user_date")
-}
-
 model manpower_schedule {
   manpower_id         Int      @id @default(autoincrement())
   branch_id           Int
@@ -229,4 +222,72 @@ model manpower_schedule {
   @@unique([branch_id, start_date], map: "uq_manpower_schedule_branch_week")
   @@index([branch_id, start_date(sort: Desc)], map: "idx_manpower_schedule_branch_date")
   @@index([status], map: "idx_manpower_schedule_status")
+}
+
+model induction_profile {
+  id                                           Int              @id @default(autoincrement())
+  user_id                                      Int              @unique
+  induction_type                               String           @default("Onboarding") @db.VarChar(20)
+  workflow_template                            String           @default("Standard") @db.VarChar(50)
+  buddy_user_id                                Int?
+  link_token                                   String           @unique @db.VarChar(128)
+  link_expires_at                              DateTime         @db.Timestamptz(6)
+  status                                       String           @default("Created") @db.VarChar(20)
+  start_date                                   DateTime         @db.Date
+  exit_date                                    DateTime?        @db.Date
+  created_by                                   Int
+  completed_at                                 DateTime?        @db.Timestamptz(6)
+  created_at                                   DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at                                   DateTime         @db.Timestamptz(6)
+  users_induction_profile_buddy_user_idTousers users?           @relation("induction_profile_buddy_user_idTousers", fields: [buddy_user_id], references: [user_id], onUpdate: NoAction, map: "fk_induction_profile_buddy")
+  users_induction_profile_created_byTousers    users            @relation("induction_profile_created_byTousers", fields: [created_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_induction_profile_creator")
+  users_induction_profile_user_idTousers       users            @relation("induction_profile_user_idTousers", fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_induction_profile_user")
+  induction_step                               induction_step[]
+
+  @@index([buddy_user_id], map: "idx_induction_profile_buddy")
+  @@index([created_by], map: "idx_induction_profile_creator")
+  @@index([status], map: "idx_induction_profile_status")
+  @@index([link_token], map: "idx_induction_profile_token")
+}
+
+model induction_request {
+  id                                             Int       @id @default(autoincrement())
+  user_id                                        Int       @unique(map: "uq_induction_request_user_active", where: raw("((status)::text <> 'completed'::text)"))
+  triggered_by_id                                Int
+  status                                         String    @default("pending") @db.VarChar(50)
+  triggered_at                                   DateTime  @default(now()) @db.Timestamptz(6)
+  accepted_at                                    DateTime? @db.Timestamptz(6)
+  induction_profile_id                           Int?
+  created_at                                     DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at                                     DateTime  @db.Timestamptz(6)
+  users_induction_request_triggered_by_idTousers users     @relation("induction_request_triggered_by_idTousers", fields: [triggered_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_induction_request_triggered_by")
+  users_induction_request_user_idTousers         users     @relation("induction_request_user_idTousers", fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_induction_request_user")
+
+  @@index([created_at], map: "idx_induction_request_created_at")
+  @@index([status], map: "idx_induction_request_status")
+  @@index([triggered_by_id], map: "idx_induction_request_triggered_by")
+}
+
+model induction_step {
+  id                                              Int               @id @default(autoincrement())
+  induction_profile_id                            Int
+  step_number                                     Int
+  title                                           String            @db.VarChar(200)
+  description                                     String?
+  responsible_user_id                             Int?
+  due_date                                        DateTime          @db.Date
+  status                                          String            @default("Pending") @db.VarChar(20)
+  completed_at                                    DateTime?         @db.Timestamptz(6)
+  completed_by                                    Int?
+  notes                                           String?
+  created_at                                      DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at                                      DateTime          @db.Timestamptz(6)
+  users_induction_step_completed_byTousers        users?            @relation("induction_step_completed_byTousers", fields: [completed_by], references: [user_id], onUpdate: NoAction, map: "fk_induction_step_completer")
+  induction_profile                               induction_profile @relation(fields: [induction_profile_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_induction_step_profile")
+  users_induction_step_responsible_user_idTousers users?            @relation("induction_step_responsible_user_idTousers", fields: [responsible_user_id], references: [user_id], onUpdate: NoAction, map: "fk_induction_step_responsible")
+
+  @@unique([induction_profile_id, step_number], map: "uq_induction_step_profile_number")
+  @@index([induction_profile_id], map: "idx_induction_step_profile")
+  @@index([responsible_user_id], map: "idx_induction_step_responsible")
+  @@index([status], map: "idx_induction_step_status")
 }
