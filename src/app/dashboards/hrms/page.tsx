@@ -1,33 +1,26 @@
-"use client";
-
-import { useSession } from "next-auth/react";
 import { redirect } from "next/navigation";
-import HrmsDashboard from "@/app/components/HrmsDashboard";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/nextauth";
 import AppShell from "@/app/components/AppShell";
+import HrmsDashboard from "@/app/components/HrmsDashboard";
 
-export default function HrmsPage() {
-  const { data: session, status } = useSession({
-    required: true,
-    onUnauthenticated() {
-      redirect("/login");
-    },
-  });
+export const dynamic = "force-dynamic";
 
-  if (status === "loading") {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 text-blue-600 font-semibold text-lg">
-        Loading HRMS...
-      </div>
-    );
-  }
+export const metadata = {
+  title: "HRMS",
+};
 
-  const userEmail = session?.user?.email || "";
-  const userRole = (session?.user as { role?: string } | undefined)?.role ?? "";
-  const userName = session?.user?.name ?? null;
+export default async function HrmsPage() {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) redirect("/login");
+
+  const userEmail = session.user.email;
+  const userRole = (session.user as { role?: string }).role ?? "";
+  const userName = session.user.name ?? null;
 
   return (
     <AppShell email={userEmail} role={userRole} name={userName}>
-      <HrmsDashboard />
+      <HrmsDashboard role={userRole} />
     </AppShell>
   );
 }

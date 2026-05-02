@@ -171,6 +171,13 @@ model users {
   leave_request_leave_request_approved_byTousers leave_request[]     @relation("leave_request_approved_byTousers")
   leave_request_leave_request_user_idTousers     leave_request[]     @relation("leave_request_user_idTousers")
   user_profile                                   user_profile?
+  induction_profile                              induction_profile?  @relation("inductionProfile")
+  induction_buddy_for                            induction_profile[] @relation("inductionBuddy")
+  induction_created                              induction_profile[] @relation("inductionCreatedBy")
+  induction_responsible                          induction_step[]    @relation("inductionResponsible")
+  induction_completed                            induction_step[]    @relation("inductionCompletedBy")
+  induction_request_user                         induction_request[] @relation("induction_request_user")
+  induction_request_triggered_by                 induction_request[] @relation("induction_request_triggered_by")
   role                                           role                @relation(fields: [role_id], references: [role_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_users_role")
 }
 
@@ -193,4 +200,76 @@ model claim {
   @@index([claim_date], map: "idx_claim_date")
   @@index([status], map: "idx_claim_status")
   @@index([user_id], map: "idx_claim_user_id")
+}
+
+model induction_profile {
+  id                Int       @id @default(autoincrement())
+  user_id           Int       @unique
+  induction_type    String    @default("Onboarding") @db.VarChar(20)
+  workflow_template String    @default("Standard") @db.VarChar(50)
+  buddy_user_id     Int?
+  link_token        String    @unique @db.VarChar(128)
+  link_expires_at   DateTime  @db.Timestamptz(6)
+  status            String    @default("Created") @db.VarChar(20)
+  start_date        DateTime  @db.Date
+  exit_date         DateTime? @db.Date
+  created_by        Int
+  completed_at      DateTime? @db.Timestamptz(6)
+  created_at        DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime  @updatedAt @db.Timestamptz(6)
+
+  user    users            @relation("inductionProfile", fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_induction_profile_user")
+  buddy   users?           @relation("inductionBuddy", fields: [buddy_user_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction, map: "fk_induction_profile_buddy")
+  creator users            @relation("inductionCreatedBy", fields: [created_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_induction_profile_creator")
+  steps   induction_step[]
+
+  @@index([link_token], map: "idx_induction_profile_token")
+  @@index([created_by], map: "idx_induction_profile_creator")
+  @@index([buddy_user_id], map: "idx_induction_profile_buddy")
+  @@index([status], map: "idx_induction_profile_status")
+}
+
+model induction_step {
+  id                   Int       @id @default(autoincrement())
+  induction_profile_id Int
+  step_number          Int
+  title                String    @db.VarChar(200)
+  description          String?
+  responsible_user_id  Int?
+  due_date             DateTime  @db.Date
+  status               String    @default("Pending") @db.VarChar(20)
+  completed_at         DateTime? @db.Timestamptz(6)
+  completed_by         Int?
+  notes                String?
+  created_at           DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime  @updatedAt @db.Timestamptz(6)
+
+  induction_profile  induction_profile @relation(fields: [induction_profile_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_induction_step_profile")
+  responsible_person users?            @relation("inductionResponsible", fields: [responsible_user_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction, map: "fk_induction_step_responsible")
+  completed_by_user  users?            @relation("inductionCompletedBy", fields: [completed_by], references: [user_id], onDelete: SetNull, onUpdate: NoAction, map: "fk_induction_step_completer")
+
+  @@unique([induction_profile_id, step_number], map: "uq_induction_step_profile_number")
+  @@index([induction_profile_id], map: "idx_induction_step_profile")
+  @@index([responsible_user_id], map: "idx_induction_step_responsible")
+  @@index([status], map: "idx_induction_step_status")
+}
+
+model induction_request {
+  id                   Int       @id @default(autoincrement())
+  user_id              Int
+  triggered_by_id      Int
+  status               String    @default("pending") @db.VarChar(50)
+  triggered_at         DateTime  @default(now()) @db.Timestamptz(6)
+  accepted_at          DateTime? @db.Timestamptz(6)
+  induction_profile_id Int?
+  created_at           DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime  @updatedAt @db.Timestamptz(6)
+
+  user         users @relation("induction_request_user", fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_induction_request_user")
+  triggered_by users @relation("induction_request_triggered_by", fields: [triggered_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_induction_request_triggered_by")
+
+  @@unique([user_id], map: "uq_induction_request_user_active", where: raw("status <> 'completed'"))
+  @@index([status], map: "idx_induction_request_status")
+  @@index([triggered_by_id], map: "idx_induction_request_triggered_by")
+  @@index([created_at], map: "idx_induction_request_created_at")
 }
