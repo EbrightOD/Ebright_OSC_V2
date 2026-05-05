@@ -51,13 +51,14 @@ model bank_details {
 }
 
 model branch {
-  branch_id   Int          @id @default(autoincrement())
-  branch_name String       @db.VarChar(100)
-  location    String?      @db.VarChar(255)
-  branch_code String?      @unique @db.VarChar(10)
-  region      String?      @db.VarChar(10)
-  devices     devices[]
-  employment  employment[]
+  branch_id          Int                 @id @default(autoincrement())
+  branch_name        String              @db.VarChar(100)
+  location           String?             @db.VarChar(255)
+  branch_code        String?             @unique @db.VarChar(10)
+  region             String?             @db.VarChar(10)
+  devices            devices[]
+  employment         employment[]
+  manpower_schedules manpower_schedule[]
 }
 
 model department {
@@ -68,13 +69,14 @@ model department {
 }
 
 model devices {
-  device_id      Int              @id @default(autoincrement())
-  serial_no      String           @unique @db.VarChar(100)
-  branch_id      Int?
-  ip_address     String?          @db.VarChar(45)
-  attendance     attendance[]
-  attendance_log attendance_log[]
-  branch         branch?          @relation(fields: [branch_id], references: [branch_id], onUpdate: NoAction, map: "fk_devices_branch")
+  device_id         Int              @id @default(autoincrement())
+  serial_no         String           @unique @db.VarChar(100)
+  branch_id         Int?
+  ip_address        String?          @db.VarChar(45)
+  tz_offset_minutes Int              @default(0)
+  attendance        attendance[]
+  attendance_log    attendance_log[]
+  branch            branch?          @relation(fields: [branch_id], references: [branch_id], onUpdate: NoAction, map: "fk_devices_branch")
 }
 
 model emergency_contact {
@@ -178,6 +180,8 @@ model users {
   induction_completed                            induction_step[]    @relation("inductionCompletedBy")
   induction_request_user                         induction_request[] @relation("induction_request_user")
   induction_request_triggered_by                 induction_request[] @relation("induction_request_triggered_by")
+  assigned_recommendations                       recommendation[]    @relation("recommendation_assigned_to")
+  manpower_schedules                             manpower_schedule[]
   role                                           role                @relation(fields: [role_id], references: [role_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_users_role")
 }
 
@@ -218,10 +222,12 @@ model induction_profile {
   created_at        DateTime  @default(now()) @db.Timestamptz(6)
   updated_at        DateTime  @updatedAt @db.Timestamptz(6)
 
-  user    users            @relation("inductionProfile", fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_induction_profile_user")
-  buddy   users?           @relation("inductionBuddy", fields: [buddy_user_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction, map: "fk_induction_profile_buddy")
-  creator users            @relation("inductionCreatedBy", fields: [created_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_induction_profile_creator")
-  steps   induction_step[]
+  user                  users                  @relation("inductionProfile", fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_induction_profile_user")
+  buddy                 users?                 @relation("inductionBuddy", fields: [buddy_user_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction, map: "fk_induction_profile_buddy")
+  creator               users                  @relation("inductionCreatedBy", fields: [created_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_induction_profile_creator")
+  steps                 induction_step[]
+  onboarding_candidates onboarding_candidate[]
+  survey_responses      survey_response[]      @relation("survey_responses")
 
   @@index([link_token], map: "idx_induction_profile_token")
   @@index([created_by], map: "idx_induction_profile_creator")
@@ -272,4 +278,139 @@ model induction_request {
   @@index([status], map: "idx_induction_request_status")
   @@index([triggered_by_id], map: "idx_induction_request_triggered_by")
   @@index([created_at], map: "idx_induction_request_created_at")
+}
+
+model onboarding_candidate {
+  id                   Int                @id @default(autoincrement())
+  source_id            Int                @unique
+  name                 String             @db.VarChar(200)
+  position             String             @db.VarChar(200)
+  department_branch    String             @db.VarChar(200)
+  candidate_type       String             @db.VarChar(20)
+  start_date           DateTime           @db.Date
+  end_date             DateTime?          @db.Date
+  synced_at            DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime           @updatedAt @db.Timestamptz(6)
+  induction_profile_id Int?
+  induction_profile    induction_profile? @relation(fields: [induction_profile_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_onboarding_candidate_profile")
+
+  @@index([candidate_type], map: "idx_onboarding_candidate_type")
+  @@index([synced_at], map: "idx_onboarding_candidate_synced_at")
+}
+
+model survey_template {
+  id               Int               @id @default(autoincrement())
+  milestone        String            @unique @db.VarChar(20)
+  questions        Json
+  created_at       DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime          @updatedAt @db.Timestamptz(6)
+  survey_responses survey_response[]
+}
+
+model survey_response {
+  id                   Int               @id @default(autoincrement())
+  induction_profile_id Int
+  survey_template_id   Int
+  responses            Json
+  sentiment_score      Int?
+  submitted_at         DateTime          @db.Timestamptz(6)
+  created_at           DateTime          @default(now()) @db.Timestamptz(6)
+  induction_profile    induction_profile @relation("survey_responses", fields: [induction_profile_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_survey_response_profile")
+  survey_template      survey_template   @relation(fields: [survey_template_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_survey_response_template")
+
+  @@index([induction_profile_id], map: "idx_survey_response_profile")
+}
+
+model analytics_metric {
+  id          Int      @id @default(autoincrement())
+  metric_name String   @db.VarChar(100)
+  value       Float
+  cohort      Json?
+  timestamp   DateTime @default(now()) @db.Timestamptz(6)
+  trend       String?  @db.VarChar(20)
+
+  @@index([metric_name, timestamp], map: "idx_analytics_metric_name_time")
+}
+
+model recommendation {
+  id               Int          @id @default(autoincrement())
+  title            String       @db.VarChar(255)
+  evidence         String
+  action_items     Json
+  assigned_to      Int?
+  status           String       @default("New") @db.VarChar(20)
+  priority         String       @db.VarChar(20)
+  due_date         DateTime?    @db.Date
+  completed_at     DateTime?    @db.Timestamptz(6)
+  impact_metric_id Int?
+  impact_before    Float?
+  impact_after     Float?
+  created_at       DateTime     @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime     @updatedAt @db.Timestamptz(6)
+  assigned_user    users?       @relation("recommendation_assigned_to", fields: [assigned_to], references: [user_id], onDelete: SetNull, onUpdate: NoAction, map: "fk_recommendation_assigned_to")
+  impact_logs      impact_log[]
+
+  @@index([status], map: "idx_recommendation_status")
+}
+
+model impact_log {
+  id                     Int            @id @default(autoincrement())
+  recommendation_id      Int
+  metric_name            String         @db.VarChar(100)
+  value_before           Float
+  value_after            Float
+  improvement_percentage Float
+  measured_at            DateTime       @db.Timestamptz(6)
+  created_at             DateTime       @default(now()) @db.Timestamptz(6)
+  recommendation         recommendation @relation(fields: [recommendation_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_impact_log_recommendation")
+
+  @@index([recommendation_id], map: "idx_impact_log_recommendation")
+}
+
+model mc_record {
+  id                Int      @id @default(autoincrement())
+  source_id         Int      @unique
+  name              String   @db.VarChar(200)
+  position          String   @db.VarChar(200)
+  department_branch String   @db.VarChar(200)
+  mc_date           DateTime @db.Date
+  reason            String?
+  synced_at         DateTime @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime @updatedAt @db.Timestamptz(6)
+
+  @@index([mc_date], map: "idx_mc_record_date")
+}
+
+model annual_leave_record {
+  id                Int      @id @default(autoincrement())
+  source_id         Int      @unique
+  name              String   @db.VarChar(200)
+  position          String   @db.VarChar(200)
+  department_branch String   @db.VarChar(200)
+  al_date           DateTime @db.Date
+  al_duration       String?  @db.VarChar(50)
+  synced_at         DateTime @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime @updatedAt @db.Timestamptz(6)
+
+  @@index([al_date], map: "idx_annual_leave_record_date")
+}
+
+model manpower_schedule {
+  manpower_id         Int      @id @default(autoincrement())
+  branch_id           Int
+  user_id             Int
+  start_date          DateTime @db.Date
+  end_date            DateTime @db.Date
+  selections          Json     @default("{}")
+  notes               Json     @default("{}")
+  original_selections Json     @default("{}")
+  original_notes      Json     @default("{}")
+  status              String   @default("Finalized") @db.VarChar(50)
+  submitted_at        DateTime @default(now()) @db.Timestamptz(6)
+  branch              branch   @relation(fields: [branch_id], references: [branch_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_manpower_schedule_branch")
+  users               users    @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_manpower_schedule_user")
+
+  @@unique([branch_id, start_date], map: "uq_manpower_schedule_branch_week")
+  @@index([branch_id, start_date(sort: Desc)], map: "idx_manpower_schedule_branch_date")
+  @@index([status], map: "idx_manpower_schedule_status")
 }

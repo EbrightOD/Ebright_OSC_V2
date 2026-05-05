@@ -12,10 +12,26 @@ import { OffboardingCard } from "@/app/induction/components/OffboardingCard";
 import { MCCard } from "@/app/induction/components/MCCard";
 import { AnnualLeaveCard } from "@/app/induction/components/AnnualLeaveCard";
 import {
-  getLeavesActiveToday,
-  getUpcomingExits,
-  getUpcomingHires,
+  shouldRunSync,
+  syncAllFromEbrightLeads,
+} from "@/app/induction/jobs/sync-onboarding";
+import {
+  getCombinedAnnualLeavesPastWeek,
+  getCombinedMcLeavesPastWeek,
+  getCombinedUpcomingExits,
+  getCombinedUpcomingHires,
 } from "@/app/induction/queries";
+
+async function maybeAutoSync(): Promise<void> {
+  try {
+    if (await shouldRunSync()) {
+      await syncAllFromEbrightLeads();
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[induction] auto-sync skipped:", msg);
+  }
+}
 
 export const dynamic = "force-dynamic";
 
@@ -34,20 +50,33 @@ export default async function HrDashboardPage() {
   const canManage = canManageInductions(actor?.role?.role_type ?? null);
   if (!canManage) redirect("/dashboards/hrms");
 
+  await maybeAutoSync();
+
   const [hires, exits, mcLeaves, annualLeaves] = await Promise.all([
-    getUpcomingHires(180),
-    getUpcomingExits(60),
-    getLeavesActiveToday("MC"),
-    getLeavesActiveToday("AL"),
+    // -1 week → +6 months window for onboarding
+    getCombinedUpcomingHires(180, 7),
+    // -1 week → +2 months window for offboarding (HR may still need to wrap
+    // up offboarding induction for employees in their final week / just-left).
+    getCombinedUpcomingExits(60, 7),
+    getCombinedMcLeavesPastWeek(),
+    getCombinedAnnualLeavesPastWeek(),
   ]);
 
-  const onbToday = hires.filter((h) => h.daysUntilStart <= 0).length;
-  const onbOneWeek = hires.filter((h) => h.isWithin7Days).length;
-  const onbSixMonth = hires.length;
+  const onboardingPreview = hires.slice(0, 8).map((h) => ({
+    key: h.key,
+    title: h.fullName,
+    subtitle: [h.position, h.departmentName].filter(Boolean).join(" · ") || null,
+    meta: `Starts ${h.startDate} · in ${h.daysUntilStart}d`,
+    highlight: h.isWithin7Days,
+  }));
 
-  const offToday = exits.filter((e) => e.daysUntilEnd <= 0).length;
-  const offOneWeek = exits.filter((e) => e.isWithin7Days).length;
-  const offOneMonth = exits.filter((e) => e.daysUntilEnd <= 30).length;
+  const offboardingPreview = exits.slice(0, 8).map((e) => ({
+    key: e.key,
+    title: e.fullName,
+    subtitle: [e.position, e.departmentName].filter(Boolean).join(" · ") || null,
+    meta: `Leaves ${e.endDate} · in ${e.daysUntilEnd}d`,
+    highlight: e.isWithin7Days,
+  }));
 
   const userEmail = session.user.email;
   const userRole = actor?.role?.role_type ?? "";
@@ -77,14 +106,14 @@ export default async function HrDashboardPage() {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <OnboardingCard
-                todayCount={onbToday}
-                oneWeekCount={onbOneWeek}
-                sixMonthCount={onbSixMonth}
+                total={hires.length}
+                windowLabel="-1 week → +6 months"
+                previewItems={onboardingPreview}
               />
               <OffboardingCard
-                todayCount={offToday}
-                oneWeekCount={offOneWeek}
-                oneMonthCount={offOneMonth}
+                total={exits.length}
+                windowLabel="-1 week → +2 months"
+                previewItems={offboardingPreview}
               />
               <MCCard rows={mcLeaves} />
               <AnnualLeaveCard rows={annualLeaves} />

@@ -1,53 +1,68 @@
 import Link from "next/link";
+import { UserPlus } from "lucide-react";
+import { CardHoverPreview, type HoverPreviewItem } from "./CardHoverPreview";
 
 interface Props {
-  todayCount: number;
-  oneWeekCount: number;
-  sixMonthCount: number;
+  total: number;
+  windowLabel: string;
+  previewItems?: HoverPreviewItem[];
+  previewSide?: "right" | "left" | "below";
 }
 
-export function OnboardingCard({ todayCount, oneWeekCount, sixMonthCount }: Props) {
+export function OnboardingCard({
+  total,
+  windowLabel,
+  previewItems = [],
+  previewSide = "right",
+}: Props) {
   return (
-    <Link
-      href="/induction/hr-dashboard/onboarding-detail"
-      className="block rounded-lg border border-emerald-300 bg-emerald-50 p-6 shadow-sm transition hover:shadow-md hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
-    >
-      <h3 className="text-xs font-bold uppercase tracking-wider text-emerald-900">
-        Onboarding
-      </h3>
-      <p className="mt-0.5 text-xs text-emerald-700">Today → +6 months</p>
+    <div className="group relative">
+      <Link
+        href="/induction/hr-dashboard/onboarding-detail"
+        className="relative block overflow-hidden rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 via-emerald-100 to-teal-100 p-8 shadow-sm transition hover:shadow-xl hover:-translate-y-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
+      >
+        {/* Decorative blur */}
+        <div className="pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-full bg-emerald-300/30 blur-3xl" />
+        <div className="pointer-events-none absolute -left-10 -bottom-10 h-36 w-36 rounded-full bg-teal-300/20 blur-3xl" />
 
-      <div className="mt-4 text-center">
-        <div className="text-5xl font-bold leading-none tabular-nums text-emerald-900">
-          {todayCount}
-        </div>
-        <div className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-emerald-700">
-          Today
-        </div>
-      </div>
-
-      <div className="mt-5 grid grid-cols-2 gap-2">
-        <div
-          className={`rounded-md p-2 text-center ${
-            oneWeekCount > 0 ? "bg-emerald-200" : "bg-white"
-          }`}
-        >
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-800">
-            +1 Week
+        <div className="relative flex items-start justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-md">
+                <UserPlus className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <h3 className="text-sm font-extrabold uppercase tracking-wider text-emerald-900">
+                Onboarding
+              </h3>
+            </div>
+            <p className="mt-2 text-xs font-medium text-emerald-700">{windowLabel}</p>
           </div>
-          <div className="text-lg font-bold tabular-nums text-emerald-900">{oneWeekCount}</div>
         </div>
-        <div className="rounded-md bg-white p-2 text-center">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-800">
-            +6 Months
-          </div>
-          <div className="text-lg font-bold tabular-nums text-emerald-900">{sixMonthCount}</div>
-        </div>
-      </div>
 
-      <p className="mt-4 text-center text-[10px] font-semibold uppercase tracking-wider text-emerald-600">
-        Click to view detail
-      </p>
-    </Link>
+        <div className="relative mt-6 flex items-end justify-between">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700">
+              Total
+            </p>
+            <p className="mt-1 text-7xl font-black leading-none tabular-nums text-emerald-900 drop-shadow-sm">
+              {total}
+            </p>
+          </div>
+          <span className="rounded-full bg-emerald-600/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-emerald-800">
+            Hover · Click
+          </span>
+        </div>
+      </Link>
+
+      <CardHoverPreview
+        accent="emerald"
+        side={previewSide}
+        title="Onboarding Pipeline"
+        items={previewItems}
+        emptyText="No upcoming hires."
+        totalLabel={`${total} total`}
+        footer="Highlighted rows start within 7 days."
+      />
+    </div>
   );
 }

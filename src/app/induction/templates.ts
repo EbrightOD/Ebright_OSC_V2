@@ -70,3 +70,62 @@ export function computeStepDueDate(startDate: Date, daysOffset: number): Date {
   d.setUTCDate(d.getUTCDate() + daysOffset);
   return d;
 }
+
+export type SurveyMilestone = "Day1" | "Week2" | "Month1" | "Month3";
+
+export type SurveyQuestionType = "emoji" | "text" | "scale" | "multiple_choice";
+
+export interface SurveyQuestion {
+  id: string;
+  text: string;
+  type: SurveyQuestionType;
+  options?: ReadonlyArray<string | number>;
+}
+
+export interface SurveyTemplate {
+  milestone: SurveyMilestone;
+  questions: ReadonlyArray<SurveyQuestion>;
+}
+
+export const SURVEY_TEMPLATES: Record<SurveyMilestone, SurveyTemplate> = {
+  Day1: {
+    milestone: "Day1",
+    questions: [
+      {
+        id: "day1_overall",
+        text: "How's your first day?",
+        type: "emoji",
+        options: ["😞", "😐", "😊"],
+      },
+      {
+        id: "day1_word",
+        text: "One word to describe today:",
+        type: "text",
+      },
+    ],
+  },
+  Week2: {
+    milestone: "Week2",
+    questions: [
+      { id: "week2_confidence", text: "Confidence in your role", type: "scale", options: [1, 2, 3, 4, 5] },
+      { id: "week2_clarity", text: "Clarity of expectations", type: "scale", options: [1, 2, 3, 4, 5] },
+      { id: "week2_training", text: "Quality of training", type: "scale", options: [1, 2, 3, 4, 5] },
+      { id: "week2_manager", text: "Manager support", type: "scale", options: [1, 2, 3, 4, 5] },
+      { id: "week2_recommend", text: "Would recommend to a friend?", type: "multiple_choice", options: ["Yes", "No"] },
+    ],
+  },
+  Month1: {
+    milestone: "Month1",
+    questions: [
+      { id: "month1_ready", text: "Ready to go solo?", type: "scale", options: [1, 2, 3, 4, 5] },
+      { id: "month1_satisfaction", text: "Overall satisfaction", type: "scale", options: [1, 2, 3, 4, 5] },
+    ],
+  },
+  Month3: {
+    milestone: "Month3",
+    questions: [
+      { id: "m3_overall", text: "Overall experience", type: "scale", options: [1, 2, 3, 4, 5] },
+      { id: "m3_stay", text: "Likelihood to stay", type: "scale", options: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] },
+    ],
+  },
+};

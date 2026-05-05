@@ -12,12 +12,15 @@ import {
   UserMinus,
   UserPlus,
 } from "lucide-react";
-import { createInductionRequest } from "@/app/induction/actions";
+import {
+  createInductionRequest,
+  createInductionRequestForEbrightCandidate,
+} from "@/app/induction/actions";
 import type {
+  CombinedExitRow,
+  CombinedHireRow,
   InductionStepView,
   InductionView,
-  UpcomingExitRow,
-  UpcomingHireRow,
 } from "@/app/induction/queries";
 import {
   OFFBOARDING_WORKFLOW,
@@ -28,8 +31,8 @@ import { WorkflowDiagram } from "./WorkflowDiagram";
 import { TrainingChecklist } from "./TrainingChecklist";
 
 interface OnboardingDashboardProps {
-  hires: UpcomingHireRow[];
-  exits: UpcomingExitRow[];
+  hires: CombinedHireRow[];
+  exits: CombinedExitRow[];
   view?: "onboarding" | "offboarding" | "both";
   ownInduction: InductionView | null;
   isManager: boolean;
@@ -66,8 +69,8 @@ export default function OnboardingDashboard({
 }: OnboardingDashboardProps) {
   const router = useRouter();
   const [, startTransition] = useTransition();
-  const [pending, setPending] = useState<Set<number>>(new Set());
-  const [errors, setErrors] = useState<Map<number, string>>(new Map());
+  const [pending, setPending] = useState<Set<string>>(new Set());
+  const [errors, setErrors] = useState<Map<string, string>>(new Map());
   const [refreshing, setRefreshing] = useState(false);
 
   const showOnboarding = view !== "offboarding";
@@ -85,27 +88,38 @@ export default function OnboardingDashboard({
 
   const subheading =
     view === "onboarding"
-      ? "Employees joining in the next 6 months. Rows in red are within 1 week."
+      ? "Employees within ±1 week of their start date. Add them to the induction queue."
       : view === "offboarding"
-        ? "Employees leaving in the next 2 months. Rows in red are within 1 week."
-        : "Employees joining in the next 6 months and leaving in the next 2 months. Rows in red are within 1 week.";
+        ? "Employees leaving within the next 2 weeks. Add them to the offboarding queue."
+        : "Employees within ±1 week of joining, or leaving in the next 2 weeks.";
 
-  const handleAddToQueue = (userId: number) => {
-    setPending((p) => new Set(p).add(userId));
+  const handleAddToQueue = (row: CombinedHireRow | CombinedExitRow) => {
+    const key = row.key;
+    setPending((p) => new Set(p).add(key));
     setErrors((e) => {
       const next = new Map(e);
-      next.delete(userId);
+      next.delete(key);
       return next;
     });
     startTransition(async () => {
-      const result = await createInductionRequest(userId);
+      let result;
+      if (row.source === "local" && row.userId !== null) {
+        result = await createInductionRequest(row.userId);
+      } else {
+        // ebrightleads candidate — extract the source_id from `ebr-<id>`.
+        const sourceId = parseInt(key.replace(/^ebr-/, ""), 10);
+        result = await createInductionRequestForEbrightCandidate(sourceId);
+      }
       setPending((p) => {
         const next = new Set(p);
-        next.delete(userId);
+        next.delete(key);
         return next;
       });
       if (!result.ok) {
-        setErrors((e) => new Map(e).set(userId, result.error ?? "Failed"));
+        setErrors((e) => new Map(e).set(key, result.error ?? "Failed"));
+      } else {
+        // Successful queue — refresh server data so the row shows as Queued.
+        router.refresh();
       }
     });
   };
@@ -168,7 +182,7 @@ export default function OnboardingDashboard({
                 <div>
                   <h2 className="text-base font-semibold text-slate-900">Onboarding</h2>
                   <p className="mt-0.5 text-xs text-slate-500">
-                    Employees starting in the next 6 months
+                    ±1 week of start date
                   </p>
                 </div>
               </div>
@@ -190,15 +204,17 @@ export default function OnboardingDashboard({
             ) : (
               <ul className="space-y-2 max-h-[480px] overflow-y-auto pr-1">
                 {hires.map((row) => {
-                  const isPending = pending.has(row.userId);
+                  const isEbright = row.source === "ebrightleads";
+                  const isPending = pending.has(row.key);
                   const isQueued = row.hasPendingRequest;
-                  const errorMsg = errors.get(row.userId);
+                  const hasInduction = row.inductionProfileStatus !== null;
+                  const errorMsg = errors.get(row.key);
                   const rowBg = row.isWithin7Days
                     ? "bg-rose-50 border-rose-200"
                     : "bg-slate-50 border-slate-200";
                   return (
                     <li
-                      key={row.userId}
+                      key={row.key}
                       className={`rounded-xl border ${rowBg} p-3 flex flex-wrap items-center gap-3`}
                     >
                       <div className="min-w-0 flex-1">
@@ -213,9 +229,14 @@ export default function OnboardingDashboard({
                           >
                             {dayLabel(row.daysUntilStart)}
                           </span>
+                          {isEbright && (
+                            <span className="inline-flex items-center rounded-md bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">
+                              ebrightleads
+                            </span>
+                          )}
                         </div>
                         <p className="text-xs text-slate-500 truncate">
-                          {row.email} · {row.position ?? "—"} · {row.departmentName ?? "—"}
+                          {row.email ?? row.departmentName ?? "—"} · {row.position ?? "—"} · {row.departmentName ?? "—"}
                         </p>
                         <p className="text-xs text-slate-500 mt-0.5">Starts {row.startDate}</p>
                         {errorMsg && (
@@ -225,16 +246,24 @@ export default function OnboardingDashboard({
                           </p>
                         )}
                       </div>
-                      {isQueued ? (
+                      {hasInduction ? (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-800">
+                          <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
+                          {row.inductionProfileStatus === "Completed"
+                            ? "Induction Completed"
+                            : "In Induction"}
+                        </span>
+                      ) : isQueued ? (
                         <span className="inline-flex items-center gap-1 rounded-md bg-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700">
                           <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
-                          Queued
+                          Requested
                         </span>
                       ) : (
                         <button
                           type="button"
-                          onClick={() => handleAddToQueue(row.userId)}
+                          onClick={() => handleAddToQueue(row)}
                           disabled={isPending}
+                          title={isEbright ? "Promotes the ebrightleads candidate into HRFS and queues an induction." : undefined}
                           className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed"
                         >
                           <UserPlus className="w-3.5 h-3.5" aria-hidden="true" />
@@ -260,7 +289,7 @@ export default function OnboardingDashboard({
                 <div>
                   <h2 className="text-base font-semibold text-slate-900">Offboarding</h2>
                   <p className="mt-0.5 text-xs text-slate-500">
-                    Employees leaving in the next 2 months
+                    Leaving in the next 2 weeks
                   </p>
                 </div>
               </div>
@@ -282,15 +311,17 @@ export default function OnboardingDashboard({
             ) : (
               <ul className="space-y-2 max-h-[480px] overflow-y-auto pr-1">
                 {exits.map((row) => {
-                  const isPending = pending.has(row.userId);
+                  const isEbright = row.source === "ebrightleads";
+                  const isPending = pending.has(row.key);
                   const isQueued = row.hasPendingRequest;
-                  const errorMsg = errors.get(row.userId);
+                  const hasInduction = row.inductionProfileStatus !== null;
+                  const errorMsg = errors.get(row.key);
                   const rowBg = row.isWithin7Days
                     ? "bg-rose-50 border-rose-200"
                     : "bg-slate-50 border-slate-200";
                   return (
                     <li
-                      key={row.userId}
+                      key={row.key}
                       className={`rounded-xl border ${rowBg} p-3 flex flex-wrap items-center gap-3`}
                     >
                       <div className="min-w-0 flex-1">
@@ -305,9 +336,14 @@ export default function OnboardingDashboard({
                           >
                             {dayLabel(row.daysUntilEnd)}
                           </span>
+                          {isEbright && (
+                            <span className="inline-flex items-center rounded-md bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">
+                              ebrightleads
+                            </span>
+                          )}
                         </div>
                         <p className="text-xs text-slate-500 truncate">
-                          {row.email} · {row.position ?? "—"} · {row.departmentName ?? "—"}
+                          {row.email ?? row.departmentName ?? "—"} · {row.position ?? "—"} · {row.departmentName ?? "—"}
                         </p>
                         <p className="text-xs text-slate-500 mt-0.5">Leaves {row.endDate}</p>
                         {errorMsg && (
@@ -317,16 +353,24 @@ export default function OnboardingDashboard({
                           </p>
                         )}
                       </div>
-                      {isQueued ? (
+                      {hasInduction ? (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-800">
+                          <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
+                          {row.inductionProfileStatus === "Completed"
+                            ? "Induction Completed"
+                            : "In Induction"}
+                        </span>
+                      ) : isQueued ? (
                         <span className="inline-flex items-center gap-1 rounded-md bg-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700">
                           <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
-                          Queued
+                          Requested
                         </span>
                       ) : (
                         <button
                           type="button"
-                          onClick={() => handleAddToQueue(row.userId)}
+                          onClick={() => handleAddToQueue(row)}
                           disabled={isPending}
+                          title={isEbright ? "Promotes the ebrightleads candidate into HRFS and queues an induction." : undefined}
                           className="inline-flex items-center gap-1.5 rounded-md bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-60 disabled:cursor-not-allowed"
                         >
                           <UserMinus className="w-3.5 h-3.5" aria-hidden="true" />

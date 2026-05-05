@@ -8,7 +8,7 @@ import AppShell from "@/app/components/AppShell";
 import { BulkAddToQueueButton } from "@/app/induction/components/BulkAddToQueueButton";
 import { HRMSSidebar } from "@/app/induction/components/HRMSSidebar";
 import { canManageInductions } from "@/app/induction/roles";
-import { getUpcomingHires } from "@/app/induction/queries";
+import { getCombinedUpcomingHires } from "@/app/induction/queries";
 
 export const dynamic = "force-dynamic";
 
@@ -27,10 +27,19 @@ export default async function OnboardingDetailPage() {
   const canManage = canManageInductions(actor?.role?.role_type ?? null);
   if (!canManage) redirect("/dashboards/hrms");
 
-  const hires = await getUpcomingHires(180);
+  // Match the HR dashboard hover window (-1 week → +6 months) so employees
+  // who started in the last 7 days (still in induction) remain visible here.
+  const hires = await getCombinedUpcomingHires(180, 7);
   const highlightedUserIds = hires
-    .filter((h) => h.isWithin7Days && !h.hasPendingRequest && h.inductionProfileStatus === null)
-    .map((h) => h.userId);
+    .filter(
+      (h) =>
+        h.source === "local" &&
+        h.userId !== null &&
+        h.isWithin7Days &&
+        !h.hasPendingRequest &&
+        h.inductionProfileStatus === null,
+    )
+    .map((h) => h.userId as number);
 
   const userEmail = session.user.email;
   const userRole = actor?.role?.role_type ?? "";
@@ -51,7 +60,7 @@ export default async function OnboardingDetailPage() {
                 Back to Overview
               </Link>
               <h1 className="mt-2 text-2xl font-semibold tracking-tight">
-                Onboarding (Today → +6 months) [{hires.length}]
+                Onboarding (-1 week → +6 months) [{hires.length}]
               </h1>
               <p className="text-sm text-emerald-100">Green = within 1 week</p>
             </div>
@@ -67,19 +76,20 @@ export default async function OnboardingDetailPage() {
                     <th scope="col" className="px-4 py-3 text-left font-medium">Position</th>
                     <th scope="col" className="px-4 py-3 text-left font-medium">Department</th>
                     <th scope="col" className="px-4 py-3 text-left font-medium">Start Date</th>
+                    <th scope="col" className="px-4 py-3 text-left font-medium">Source</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {hires.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-4 py-10 text-center text-sm text-slate-500">
+                      <td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">
                         No upcoming hires in the next 6 months.
                       </td>
                     </tr>
                   ) : (
                     hires.map((h, i) => (
                       <tr
-                        key={h.userId}
+                        key={h.key}
                         className={h.isWithin7Days ? "bg-emerald-50" : "bg-white"}
                       >
                         <td className="px-4 py-3 text-slate-500 tabular-nums">{i + 1}</td>
@@ -92,6 +102,15 @@ export default async function OnboardingDetailPage() {
                         <td className="px-4 py-3 text-slate-700">{h.position ?? "—"}</td>
                         <td className="px-4 py-3 text-slate-700">{h.departmentName ?? "—"}</td>
                         <td className="px-4 py-3 text-slate-700">{h.startDate}</td>
+                        <td className="px-4 py-3 text-xs">
+                          <span className={
+                            h.source === "local"
+                              ? "rounded bg-slate-100 px-2 py-0.5 text-slate-700"
+                              : "rounded bg-blue-100 px-2 py-0.5 text-blue-700"
+                          }>
+                            {h.source === "local" ? "hrfs" : "ebrightleads"}
+                          </span>
+                        </td>
                       </tr>
                     ))
                   )}

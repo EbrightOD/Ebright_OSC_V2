@@ -41,7 +41,7 @@ export default function PersonalInductionView({
   const journeyTitle = isOffboarding ? "Offboarding Process" : "Onboarding Journey";
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="h-full flex-1 overflow-y-auto bg-slate-50">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10 space-y-6">
         <header className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6 sm:p-8">
           <p className="text-xs font-semibold uppercase tracking-wide text-blue-600">

@@ -32,7 +32,7 @@ export default async function PersonalInductionPage({ params }: PageProps) {
         : "The link you used doesn’t match any active induction. Double-check the URL or contact HR.";
 
     return (
-      <main className="min-h-screen bg-slate-50 flex items-center justify-center px-4 py-10">
+      <main className="h-full flex-1 overflow-y-auto bg-slate-50 flex items-center justify-center px-4 py-10">
         <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-sm p-6 sm:p-8">
           <div className="flex items-start gap-3">
             <span className="mt-0.5 inline-flex w-9 h-9 items-center justify-center rounded-full bg-red-100">

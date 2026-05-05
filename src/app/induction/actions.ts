@@ -282,6 +282,98 @@ export interface CreateBulkInductionRequestsResult {
   skipped: number;
 }
 
+function slugifyName(name: string): string {
+  return name
+    .normalize("NFKD")
+    .replace(/[^\w\s-]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ".");
+}
+
+export async function createInductionRequestForEbrightCandidate(
+  candidateSourceId: number,
+): Promise<CreateInductionRequestResult> {
+  const auth = await loadActorAndAuthorize();
+  if (!auth.ok) return { ok: false, error: auth.error };
+
+  if (!Number.isFinite(candidateSourceId)) {
+    return { ok: false, error: "Invalid candidate id." };
+  }
+
+  const candidate = await prisma.onboarding_candidate.findUnique({
+    where: { source_id: candidateSourceId },
+  });
+  if (!candidate) {
+    return { ok: false, error: "Ebrightleads candidate not found." };
+  }
+
+  // Reuse if we already promoted this candidate before.
+  if (candidate.induction_profile_id) {
+    const profile = await prisma.induction_profile.findUnique({
+      where: { id: candidate.induction_profile_id },
+      select: { user_id: true },
+    });
+    if (profile) return createInductionRequest(profile.user_id);
+  }
+
+  const baseEmail = `${slugifyName(candidate.name) || `candidate-${candidate.source_id}`}@ebrightleads.local`;
+
+  const staffRole = await prisma.role.findFirst({
+    where: { role_type: "staff" },
+    select: { role_id: true },
+  });
+  if (!staffRole) {
+    return { ok: false, error: "No 'staff' role configured in the system." };
+  }
+
+  const department = await prisma.department.findFirst({
+    where: { department_name: candidate.department_branch },
+    select: { department_id: true },
+  });
+
+  try {
+    const newUser = await prisma.$transaction(async (tx) => {
+      // Ensure unique email — append source_id if the slug collides.
+      let email = baseEmail;
+      const existing = await tx.users.findUnique({ where: { email } });
+      if (existing) email = `${slugifyName(candidate.name)}.${candidate.source_id}@ebrightleads.local`;
+
+      const created = await tx.users.create({
+        data: {
+          email,
+          role_id: staffRole.role_id,
+          status: "active",
+          user_profile: {
+            create: { full_name: candidate.name },
+          },
+          employment: {
+            create: {
+              position: candidate.position,
+              department_id: department?.department_id,
+              start_date: candidate.start_date,
+              end_date: candidate.end_date,
+              status: candidate.candidate_type === "offboarding" ? "offboarding" : "active",
+            },
+          },
+        },
+        select: { user_id: true },
+      });
+
+      return created;
+    });
+
+    const result = await createInductionRequest(newUser.user_id);
+
+    revalidatePath("/induction/onboarding-dashboard");
+    revalidatePath("/induction/hr-dashboard");
+    return result;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Unknown database error.";
+    return { ok: false, error: `Could not promote candidate: ${msg}` };
+  }
+}
+
 export async function createBulkInductionRequests(
   userIds: number[],
 ): Promise<CreateBulkInductionRequestsResult> {
@@ -587,4 +679,80 @@ export async function markStepCompleteByToken(
   revalidatePath(`/induction/${token}`);
   revalidatePath("/induction/control-centre");
   return { ok: true };
+}
+
+// ============ Slice E: surveys & recommendations ============
+
+export type SurveySubmissionResult =
+  | { ok: true; message: string }
+  | { ok: false; error: string };
+
+export async function submitSurveyResponse(
+  inductionProfileId: number,
+  milestone: string,
+  responses: Record<string, string | number>,
+): Promise<SurveySubmissionResult> {
+  try {
+    const template = await prisma.survey_template.findUnique({
+      where: { milestone },
+    });
+
+    if (!template) {
+      return { ok: false, error: "Survey template not found." };
+    }
+
+    const numericValues = Object.values(responses).filter(
+      (v): v is number => typeof v === "number" && v >= 1 && v <= 5,
+    );
+    const sentimentScore =
+      numericValues.length > 0
+        ? Math.round(
+            numericValues.reduce((a, b) => a + b, 0) / numericValues.length,
+          )
+        : null;
+
+    await prisma.survey_response.create({
+      data: {
+        induction_profile_id: inductionProfileId,
+        survey_template_id: template.id,
+        responses,
+        sentiment_score: sentimentScore,
+        submitted_at: new Date(),
+      },
+    });
+
+    console.info(
+      "[induction] survey submitted:",
+      JSON.stringify({ inductionProfileId, milestone, score: sentimentScore }),
+    );
+
+    return { ok: true, message: "Survey submitted." };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    return { ok: false, error: `Failed to submit survey: ${msg}` };
+  }
+}
+
+export type RecommendationStatus =
+  | "New"
+  | "In Progress"
+  | "Implemented"
+  | "Verified";
+
+export async function updateRecommendationStatus(
+  recommendationId: number,
+  newStatus: RecommendationStatus,
+): Promise<void> {
+  const auth = await loadActorAndAuthorize();
+  if (!auth.ok) return;
+
+  await prisma.recommendation.update({
+    where: { id: recommendationId },
+    data: {
+      status: newStatus,
+      completed_at: newStatus === "Verified" ? new Date() : null,
+    },
+  });
+
+  revalidatePath("/induction/feedback-analytics");
 }

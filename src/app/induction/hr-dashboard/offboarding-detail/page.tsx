@@ -8,7 +8,7 @@ import AppShell from "@/app/components/AppShell";
 import { BulkAddToQueueButton } from "@/app/induction/components/BulkAddToQueueButton";
 import { HRMSSidebar } from "@/app/induction/components/HRMSSidebar";
 import { canManageInductions } from "@/app/induction/roles";
-import { getUpcomingExits } from "@/app/induction/queries";
+import { getCombinedUpcomingExits } from "@/app/induction/queries";
 
 export const dynamic = "force-dynamic";
 
@@ -27,10 +27,19 @@ export default async function OffboardingDetailPage() {
   const canManage = canManageInductions(actor?.role?.role_type ?? null);
   if (!canManage) redirect("/dashboards/hrms");
 
-  const exits = await getUpcomingExits(60);
+  // Match the HR dashboard window (-1 week → +2 months) so employees in their
+  // final week / just-left remain visible for offboarding follow-up.
+  const exits = await getCombinedUpcomingExits(60, 7);
   const highlightedUserIds = exits
-    .filter((e) => e.isWithin7Days && !e.hasPendingRequest && e.inductionProfileStatus === null)
-    .map((e) => e.userId);
+    .filter(
+      (e) =>
+        e.source === "local" &&
+        e.userId !== null &&
+        e.isWithin7Days &&
+        !e.hasPendingRequest &&
+        e.inductionProfileStatus === null,
+    )
+    .map((e) => e.userId as number);
 
   const userEmail = session.user.email;
   const userRole = actor?.role?.role_type ?? "";
@@ -51,7 +60,7 @@ export default async function OffboardingDetailPage() {
                 Back to Overview
               </Link>
               <h1 className="mt-2 text-2xl font-semibold tracking-tight">
-                Offboarding (Today → +1 month) [{exits.length}]
+                Offboarding (-1 week → +2 months) [{exits.length}]
               </h1>
               <p className="text-sm text-rose-100">Green = within 1 week</p>
             </div>
@@ -67,19 +76,20 @@ export default async function OffboardingDetailPage() {
                     <th scope="col" className="px-4 py-3 text-left font-medium">Position</th>
                     <th scope="col" className="px-4 py-3 text-left font-medium">Department</th>
                     <th scope="col" className="px-4 py-3 text-left font-medium">End Date</th>
+                    <th scope="col" className="px-4 py-3 text-left font-medium">Source</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {exits.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-4 py-10 text-center text-sm text-slate-500">
+                      <td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">
                         No upcoming exits in the next month.
                       </td>
                     </tr>
                   ) : (
                     exits.map((e, i) => (
                       <tr
-                        key={e.userId}
+                        key={e.key}
                         className={e.isWithin7Days ? "bg-emerald-50" : "bg-white"}
                       >
                         <td className="px-4 py-3 text-slate-500 tabular-nums">{i + 1}</td>
@@ -92,6 +102,15 @@ export default async function OffboardingDetailPage() {
                         <td className="px-4 py-3 text-slate-700">{e.position ?? "—"}</td>
                         <td className="px-4 py-3 text-slate-700">{e.departmentName ?? "—"}</td>
                         <td className="px-4 py-3 text-slate-700">{e.endDate}</td>
+                        <td className="px-4 py-3 text-xs">
+                          <span className={
+                            e.source === "local"
+                              ? "rounded bg-slate-100 px-2 py-0.5 text-slate-700"
+                              : "rounded bg-blue-100 px-2 py-0.5 text-blue-700"
+                          }>
+                            {e.source === "local" ? "hrfs" : "ebrightleads"}
+                          </span>
+                        </td>
                       </tr>
                     ))
                   )}
