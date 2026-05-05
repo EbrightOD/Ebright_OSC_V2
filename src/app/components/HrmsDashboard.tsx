@@ -9,13 +9,14 @@ import {
   CalendarCheck,
   UserPlus,
   UserMinus,
-  ChartPie,
   PiggyBank,
   Home,
   ChevronRight,
 } from "lucide-react";
 
 type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
+
+const MANAGE_INDUCTION_ROLE_TYPES = new Set(["superadmin", "hr", "od"]);
 
 interface HrmsModule {
   id: string;
@@ -25,6 +26,7 @@ interface HrmsModule {
   Icon: IconComponent;
   accent: string;
   accentHover: string;
+  requiredRoles?: ReadonlySet<string>;
 }
 
 const modules: HrmsModule[] = [
@@ -67,29 +69,42 @@ const modules: HrmsModule[] = [
   {
     id: "onboarding",
     title: "Onboarding",
-    description: "Welcome new hires and track progress",
-    href: "/onboarding",
+    description: "Manage new employee inductions",
+    href: "/induction/onboarding-dashboard?type=onboarding",
     Icon: UserPlus,
-    accent: "bg-sky-600",
-    accentHover: "group-hover:bg-sky-700",
+    accent: "bg-emerald-600",
+    accentHover: "group-hover:bg-emerald-700",
+    requiredRoles: MANAGE_INDUCTION_ROLE_TYPES,
   },
   {
     id: "offboarding",
     title: "Offboarding",
-    description: "Handle exits and clearances",
-    href: "/offboarding",
+    description: "Manage employee exits",
+    href: "/induction/onboarding-dashboard?type=offboarding",
     Icon: UserMinus,
-    accent: "bg-slate-600",
-    accentHover: "group-hover:bg-slate-700",
+    accent: "bg-rose-600",
+    accentHover: "group-hover:bg-rose-700",
+    requiredRoles: MANAGE_INDUCTION_ROLE_TYPES,
+  },
+  {
+    id: "induction-control-centre",
+    title: "Induction Control Centre",
+    description: "Review pending requests and active inductions",
+    href: "/induction/control-centre",
+    Icon: UserPlus,
+    accent: "bg-sky-600",
+    accentHover: "group-hover:bg-sky-700",
+    requiredRoles: MANAGE_INDUCTION_ROLE_TYPES,
   },
   {
     id: "hr-dashboard",
     title: "HR Dashboard",
-    description: "KPIs and workforce analytics",
-    href: "/hr-dashboard",
-    Icon: ChartPie,
-    accent: "bg-rose-600",
-    accentHover: "group-hover:bg-rose-700",
+    description: "Overview of onboarding, offboarding, MC & leave",
+    href: "/induction/hr-dashboard",
+    Icon: LayoutDashboard,
+    accent: "bg-blue-600",
+    accentHover: "group-hover:bg-blue-700",
+    requiredRoles: MANAGE_INDUCTION_ROLE_TYPES,
   },
   {
     id: "manpower-cost-report",
@@ -102,12 +117,24 @@ const modules: HrmsModule[] = [
   },
 ];
 
-export default function HrmsDashboard() {
+interface HrmsDashboardProps {
+  role?: string | null;
+}
+
+export default function HrmsDashboard({ role }: HrmsDashboardProps = {}) {
+  const normalizedRole = (role ?? "").toLowerCase();
+  const visibleModules = modules.filter(
+    (m) => !m.requiredRoles || m.requiredRoles.has(normalizedRole),
+  );
+
   return (
     <div className="min-h-full bg-slate-50">
       <div className="max-w-7xl mx-auto px-6 pt-4 pb-10">
         <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-sm text-slate-500 mb-6">
-          <Link href="/home" className="flex items-center gap-1 hover:text-slate-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 rounded">
+          <Link
+            href="/home"
+            className="flex items-center gap-1 hover:text-slate-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 rounded"
+          >
             <Home className="w-4 h-4" aria-hidden="true" />
             <span>Home</span>
           </Link>
@@ -122,14 +149,16 @@ export default function HrmsDashboard() {
         </header>
 
         <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {modules.map(({ id, title, description, href, Icon, accent, accentHover }) => (
+          {visibleModules.map(({ id, title, description, href, Icon, accent, accentHover }) => (
             <li key={id}>
               <Link
                 href={href}
                 className="group block h-full bg-white border border-slate-200 rounded-2xl p-6 transition-all duration-200 hover:border-slate-300 hover:shadow-lg hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
               >
                 <div className="flex items-start justify-between gap-4">
-                  <div className={`${accent} ${accentHover} w-12 h-12 rounded-xl flex items-center justify-center transition-colors duration-200 shrink-0`}>
+                  <div
+                    className={`${accent} ${accentHover} w-12 h-12 rounded-xl flex items-center justify-center transition-colors duration-200 shrink-0`}
+                  >
                     <Icon className="w-6 h-6 text-white" aria-hidden="true" />
                   </div>
                   <ChevronRight
