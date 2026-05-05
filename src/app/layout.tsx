@@ -16,6 +16,11 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Ebright HR System",
   description: "Ebright HR Management System",
+  icons: {
+    icon: "/ebright-icon.png",
+    shortcut: "/ebright-icon.png",
+    apple: "/ebright-icon.png",
+  },
 };
 
 export default function RootLayout({
@@ -26,9 +31,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full overflow-hidden antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} h-full overflow-hidden antialiased bg-slate-50`}
     >
-      <body className="h-full overflow-hidden flex flex-col">
+      <body className="h-full overflow-hidden flex flex-col bg-slate-50">
         <Providers>{children}</Providers>
       </body>
     </html>

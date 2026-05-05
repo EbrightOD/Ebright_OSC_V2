@@ -9,6 +9,36 @@ import type { CreateEmployeeResult } from "@/app/dashboard-employee-management/a
 import type { EmployeeDetailFull } from "@/lib/employeeQueries";
 
 const ROLE_OPTIONS = ["FT CEO", "FT HOD", "FT EXEC", "BM", "FT COACH", "PT COACH", "INTERN"];
+
+// Employee ID structure: RR-DD-NNNN (8 digits total). The role select drives
+// the first two digits; the department code drives the next two; the user keys
+// in the trailing 4 digits manually.
+const ROLE_CODES: Record<string, string> = {
+  "FT CEO": "11",
+  "FT HOD": "22",
+  "FT EXEC": "33",
+  "INTERN": "44",
+  "BM": "55",
+  "FT COACH": "66",
+  "PT COACH": "77",
+};
+const DEPT_CODES: Array<{ code: string; name: string }> = [
+  { code: "01", name: "CEO" },
+  { code: "02", name: "Operation" },
+  { code: "03", name: "Academy" },
+  { code: "04", name: "HR" },
+  { code: "05", name: "Finance" },
+  { code: "06", name: "IOP" },
+  { code: "07", name: "Marketing" },
+  { code: "08", name: "Optimisation" },
+];
+// Roles where the department code is fixed and not user-selectable.
+const FIXED_DEPT_BY_ROLE: Record<string, string> = {
+  "FT CEO": "01",
+  "BM": "02",
+  "FT COACH": "02",
+  "PT COACH": "02",
+};
 const GENDER_OPTIONS = ["Male", "Female", "Other"];
 const EMPLOYMENT_TYPE_OPTIONS = [
   "Full time - Permanent",
@@ -93,6 +123,26 @@ export default function EmployeeForm({
   // Department select is only relevant under HQ — derived from the chosen branch's code.
   const isHqSelected =
     branches.find((b) => String(b.id) === branchId)?.code === "HQ";
+
+  // Employee ID parts. Existing rows that already follow the RR-DD-NNNNNN
+  // convention pre-fill cleanly; legacy values stay in the serial slot.
+  const existingId = employee?.employeeId ?? "";
+  const idIsCanonical = /^\d{8}$/.test(existingId);
+  const [empDeptCode, setEmpDeptCode] = useState<string>(
+    idIsCanonical ? existingId.slice(2, 4) : "",
+  );
+  const [empSerial, setEmpSerial] = useState<string>(
+    idIsCanonical ? existingId.slice(4) : existingId.replace(/\D/g, "").slice(0, 4),
+  );
+
+  const empRoleCode = ROLE_CODES[currentRole] ?? "";
+  const fixedDeptForRole = FIXED_DEPT_BY_ROLE[currentRole] ?? null;
+  const effectiveDeptCode = fixedDeptForRole ?? empDeptCode;
+  // Final value submitted as `employeeId` — only complete when all three parts are filled.
+  const composedEmployeeId =
+    empRoleCode && effectiveDeptCode && empSerial.length === 4
+      ? `${empRoleCode}${effectiveDeptCode}${empSerial}`
+      : "";
 
   // When the user changes Employment Type or Start Date, auto-fill End Date for
   // fixed-term contracts. Skip if Start Date is empty or contract is permanent.
@@ -224,16 +274,66 @@ export default function EmployeeForm({
           >
             <Field
               label="Employee ID"
-              hint={isSelfEdit ? "Assigned by HR — read-only." : "Optional. Leave blank to assign later."}
+              hint={
+                isSelfEdit
+                  ? "Assigned by HR — read-only."
+                  : "Format: RR (role) + DD (department) + 4-digit serial. Role auto-filled; last 4 entered manually."
+              }
+              span={2}
             >
-              <input
-                name="employeeId"
-                type="text"
-                placeholder={isSelfEdit ? "—" : "e.g. 22030001"}
-                className={`${inputCls}${isSelfEdit ? " bg-slate-50 text-slate-600" : ""}`}
-                defaultValue={employee?.employeeId ?? ""}
-                readOnly={isSelfEdit}
-              />
+              {isSelfEdit ? (
+                <input
+                  type="text"
+                  value={existingId}
+                  readOnly
+                  className={`${inputCls} bg-slate-50 text-slate-600`}
+                />
+              ) : (
+                <div className="flex items-stretch gap-2">
+                  <div
+                    className="inline-flex items-center justify-center h-10 w-16 rounded-lg border border-slate-200 bg-slate-50 font-mono text-sm font-semibold text-slate-700 select-none"
+                    title="Role code (auto from selected role)"
+                    aria-label="Role code"
+                  >
+                    {empRoleCode || "—"}
+                  </div>
+                  <div className="relative w-32">
+                    <select
+                      value={effectiveDeptCode}
+                      onChange={(e) => setEmpDeptCode(e.target.value)}
+                      disabled={fixedDeptForRole !== null}
+                      title={
+                        fixedDeptForRole
+                          ? `Locked to ${fixedDeptForRole} for this role`
+                          : "Department code"
+                      }
+                      className={`${inputCls} pr-8 appearance-none cursor-pointer font-mono ${
+                        fixedDeptForRole !== null ? "bg-slate-50 text-slate-600 cursor-not-allowed" : ""
+                      }`}
+                    >
+                      <option value="" disabled>
+                        DD
+                      </option>
+                      {DEPT_CODES.map((d) => (
+                        <option key={d.code} value={d.code}>
+                          {d.code} — {d.name}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronRight className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 rotate-90" aria-hidden="true" />
+                  </div>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={empSerial}
+                    onChange={(e) => setEmpSerial(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                    placeholder="4 digits"
+                    maxLength={4}
+                    className={`${inputCls} flex-1 font-mono`}
+                  />
+                  <input type="hidden" name="employeeId" value={composedEmployeeId} />
+                </div>
+              )}
             </Field>
             <Field label="Role" required>
               <div className="relative">

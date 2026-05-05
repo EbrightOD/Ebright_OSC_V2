@@ -6,6 +6,7 @@ import {
   Home,
   ChevronRight,
   CalendarPlus,
+  LayoutDashboard,
   CalendarCog,
   Archive,
 } from "lucide-react";
@@ -27,10 +28,19 @@ const modules: SubModule[] = [
     id: "plan-new-week",
     title: "Plan New Week",
     description: "Build the upcoming week's manpower roster",
-    href: "/manpower-schedule/plan",
+    href: "/manpower-schedule/plan-new-week",
     Icon: CalendarPlus,
     accent: "bg-emerald-600",
     accentHover: "group-hover:bg-emerald-700",
+  },
+  {
+    id: "manpower-dashboard",
+    title: "Manpower Dashboard",
+    description: "See live coverage, gaps, and headcount at a glance",
+    href: "/manpower-schedule/dashboard",
+    Icon: LayoutDashboard,
+    accent: "bg-violet-600",
+    accentHover: "group-hover:bg-violet-700",
   },
   {
     id: "update-schedule",
@@ -38,8 +48,8 @@ const modules: SubModule[] = [
     description: "Adjust shifts and assignments for active weeks",
     href: "/manpower-schedule/update",
     Icon: CalendarCog,
-    accent: "bg-violet-600",
-    accentHover: "group-hover:bg-violet-700",
+    accent: "bg-amber-600",
+    accentHover: "group-hover:bg-amber-700",
   },
   {
     id: "archive",
@@ -95,9 +105,7 @@ export default function ManpowerPlanningDashboard() {
                 className="group block h-full bg-white border border-slate-200 rounded-2xl p-6 transition-all duration-200 hover:border-slate-300 hover:shadow-lg hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
               >
                 <div className="flex items-start justify-between gap-4">
-                  <div
-                    className={`${accent} ${accentHover} w-12 h-12 rounded-xl flex items-center justify-center transition-colors duration-200 shrink-0`}
-                  >
+                  <div className={`${accent} ${accentHover} w-12 h-12 rounded-xl flex items-center justify-center transition-colors duration-200 shrink-0`}>
                     <Icon className="w-6 h-6 text-white" aria-hidden="true" />
                   </div>
                   <ChevronRight
@@ -105,7 +113,7 @@ export default function ManpowerPlanningDashboard() {
                     aria-hidden="true"
                   />
                 </div>
-                <h3 className="mt-5 text-base font-semibold text-slate-900">{title}</h3>
+                <h2 className="mt-5 text-base font-semibold text-slate-900">{title}</h2>
                 <p className="mt-1 text-sm text-slate-600 leading-relaxed">{description}</p>
               </Link>
             </li>

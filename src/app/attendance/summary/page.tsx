@@ -28,7 +28,26 @@ const CEO_HOME_BRANCH_CODE = "HQ";
 const CEO_HOME_BRANCH_NAME = "HQ";
 
 interface PageProps {
-  searchParams: Promise<{ branch?: string }>;
+  searchParams: Promise<{ branch?: string; date?: string }>;
+}
+
+// Parse "YYYY-MM-DD" as noon MYT (= 04:00 UTC) so the MYT helpers compute the
+// right calendar day regardless of the server's clock or DST.
+function parseMytDate(iso: string | undefined): Date {
+  if (!iso) return new Date();
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return new Date();
+  const [, y, mo, d] = m;
+  return new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d), 4, 0, 0));
+}
+
+// Format a Date as "YYYY-MM-DD" in MYT (matches the date input value).
+function formatMytIsoDate(d: Date): string {
+  const myt = new Date(d.getTime() + 8 * 60 * 60_000);
+  const Y = myt.getUTCFullYear();
+  const M = String(myt.getUTCMonth() + 1).padStart(2, "0");
+  const D = String(myt.getUTCDate()).padStart(2, "0");
+  return `${Y}-${M}-${D}`;
 }
 
 export default async function AttendanceSummaryPage({ searchParams }: PageProps) {
@@ -79,8 +98,10 @@ export default async function AttendanceSummaryPage({ searchParams }: PageProps)
   }
 
   const sp = await searchParams;
-  const today = mytDateOnly();                          // for attendance.date (@db.Date)
-  const { start: dayStart, end: dayEnd } = mytDayUtcBounds(); // for scan_time (@db.Timestamptz)
+  const refDate = parseMytDate(sp.date);
+  const today = mytDateOnly(refDate);                          // for attendance.date (@db.Date)
+  const { start: dayStart, end: dayEnd } = mytDayUtcBounds(refDate); // for scan_time (@db.Timestamptz)
+  const selectedDate = formatMytIsoDate(refDate);              // "YYYY-MM-DD" for the UI
 
   // All branches — used for the dropdown and for resolving home_branch_code
   const branches = await prisma.branch.findMany({
@@ -367,6 +388,7 @@ export default async function AttendanceSummaryPage({ searchParams }: PageProps)
   const data: SummaryData = {
     branches: branchOptions,
     selectedBranch,
+    selectedDate,
     counts: {
       scanned,
       currentlyIn,
