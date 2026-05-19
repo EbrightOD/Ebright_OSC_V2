@@ -78,6 +78,7 @@ export async function changePassword(
 
   const user = await prisma.users.findUnique({ where: { user_id: userId }, select: { password: true } });
   if (!user) return { ok: false, error: "Account not found." };
+  if (!user.password) return { ok: false, error: "Account has no password set. Contact admin." };
 
   const valid = await bcrypt.compare(current, user.password);
   if (!valid) return { ok: false, error: "Current password is incorrect." };
@@ -257,6 +258,7 @@ export async function updateEmail(
   const user = await prisma.users.findUnique({ where: { user_id: userId }, select: { email: true, password: true } });
   if (!user) return { ok: false, error: "Account not found." };
   if (user.email === newEmail) return { ok: false, error: "That is already your current email." };
+  if (!user.password) return { ok: false, error: "Account has no password set. Contact admin." };
 
   const valid = await bcrypt.compare(currentPassword, user.password);
   if (!valid) return { ok: false, error: "Current password is incorrect." };

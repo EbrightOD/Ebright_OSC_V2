@@ -1,0 +1,66 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - staging
+      - main
+
+# Don't run two deploys on the same branch concurrently.
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve deploy target
+        id: target
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            echo "host=103.209.156.174" >> "$GITHUB_OUTPUT"
+            echo "user=int1" >> "$GITHUB_OUTPUT"
+            echo "env_name=production" >> "$GITHUB_OUTPUT"
+          else
+            echo "host=103.209.156.225" >> "$GITHUB_OUTPUT"
+            echo "user=ubuntu" >> "$GITHUB_OUTPUT"
+            echo "env_name=staging" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ steps.target.outputs.host }}
+          username: ${{ steps.target.outputs.user }}
+          key: ${{ secrets.SSH_DEPLOY_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd ~/Ebright_OSC_V2
+
+            echo "=== Deploying ${{ steps.target.outputs.env_name }} on ${{ steps.target.outputs.host }} ==="
+            echo "Branch: ${{ github.ref_name }}    Commit: ${{ github.sha }}"
+
+            # Stash any local drift so git checkout/pull never blocks
+            git stash push -u -m "auto-stash-$(date -u +%FT%TZ)" 2>/dev/null || true
+
+            # Refresh refs and hard-sync local branch to remote
+            git fetch origin
+            git checkout -B "${{ github.ref_name }}" "origin/${{ github.ref_name }}"
+
+            # Build new image, force recreate so env_file changes apply
+            docker compose up -d --build --force-recreate
+
+            sleep 10
+            docker compose ps
+
+            # Health check on host port 3004 (matches docker-compose.yml)
+            HOST_PORT=3004
+            if curl -sf -o /dev/null --max-time 15 "http://localhost:$HOST_PORT"; then
+              echo "DEPLOY HEALTHY (http://localhost:$HOST_PORT)"
+            else
+              echo "DEPLOY UNHEALTHY — recent logs:"
+              docker compose logs --tail 100 osc
+              exit 1
+            fi

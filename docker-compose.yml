@@ -1,0 +1,15 @@
+services:
+  osc:
+    image: ebright-osc-v2:latest
+    build: .
+    container_name: ebright-osc-v2
+    ports:
+      - "3004:3000"
+    env_file:
+      - .env
+    restart: unless-stopped
+    networks:
+      - ebright-v2-net
+
+networks:
+  ebright-v2-net:
