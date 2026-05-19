@@ -49,8 +49,16 @@ jobs:
             git fetch origin
             git checkout -B "${{ github.ref_name }}" "origin/${{ github.ref_name }}"
 
-            # Build new image, force recreate so env_file changes apply
-            docker compose up -d --build --force-recreate
+            # Diagnostic: confirm we actually have the latest commit on disk
+            echo "--- HEAD commit on server: ---"
+            git log --oneline -1
+            echo "--- Tip of source (templates.ts first 25 lines): ---"
+            head -25 src/app/induction/templates.ts || true
+
+            # Build with --no-cache so layer caching can't serve a stale image,
+            # then force-recreate the container so it picks up the new image.
+            docker compose build --no-cache osc
+            docker compose up -d --force-recreate
 
             sleep 10
             docker compose ps
