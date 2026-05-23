@@ -167,6 +167,7 @@ export function HRMSSidebar({
                   key={item.label}
                   className={className}
                   aria-disabled="true"
+                  tabIndex={-1}
                   title="Coming soon"
                 >
                   {content}
@@ -190,7 +191,7 @@ export function HRMSSidebar({
         <div className="border-t border-slate-200 p-4">
           <div className="flex items-center gap-3">
             <div
-              className="w-9 h-9 rounded-full bg-blue-100 text-blue-700 font-semibold text-sm flex items-center justify-center shrink-0"
+              className="w-9 h-9 rounded-full bg-blue-200 text-blue-800 font-semibold text-sm flex items-center justify-center shrink-0"
               aria-hidden="true"
             >
               {initials}
@@ -211,7 +212,7 @@ export function HRMSSidebar({
 
 /** Two-letter initials from a name like "Jane Doe" → "JD". */
 function getInitials(name: string | null | undefined): string {
-  if (!name) return "?";
+  if (!name?.trim()) return "?";
   const parts = name.trim().split(/\s+/);
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
