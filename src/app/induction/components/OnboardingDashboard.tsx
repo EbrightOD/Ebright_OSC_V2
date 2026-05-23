@@ -28,6 +28,8 @@ import type {
   PendingInductionRow,
   SubstepTemplateView,
 } from "@/app/induction/queries";
+import type { BranchOpt } from "@/lib/employeeQueries";
+import { AssignRoleModal, type ActiveUserOption } from "./AssignRoleModal";
 
 // Inline copy of groupSubstepsByParent — queries.ts is server-only so its
 // runtime helpers can't be imported into this client component.
@@ -101,6 +103,14 @@ interface OnboardingDashboardProps {
   onboardingProfiles?: PendingInductionRow[];
   /** Phase 2B: pending induction requests for the Pending Requests card. */
   pendingRequests?: PendingInductionRequestRow[];
+  /** Phase 2B+: branches list for the Assign Role modal dropdown. */
+  branches?: BranchOpt[];
+  /** Phase 2B+: userId → branchName lookup for the Branch column in the
+   *  candidates table. */
+  branchByUserId?: Record<number, string | null>;
+  /** Phase 2B+: active users (HR/HOD/etc) for the "Reports To" dropdown
+   *  in the Assign Role modal. */
+  activeUsers?: ActiveUserOption[];
 }
 
 // Phase 2B: 5 employee-type categories per spec v2. Keys map to
@@ -230,6 +240,9 @@ export default function OnboardingDashboard({
   departments,
   onboardingProfiles,
   pendingRequests,
+  branches,
+  branchByUserId,
+  activeUsers,
 }: OnboardingDashboardProps) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -242,6 +255,8 @@ export default function OnboardingDashboard({
   const [searchQuery, setSearchQuery] = useState("");
   const [requestActionPending, setRequestActionPending] = useState<Set<number>>(new Set());
   const [requestActionErrors, setRequestActionErrors] = useState<Map<number, string>>(new Map());
+  // Phase 2B+ state — Assign Role modal target.
+  const [assigningProfile, setAssigningProfile] = useState<PendingInductionRow | null>(null);
 
   const showOnboarding = view !== "offboarding";
   const showOffboarding = view !== "onboarding";
@@ -426,6 +441,28 @@ export default function OnboardingDashboard({
               <StatCard label="Not Started" value={stats.notStarted} subtitle="Link sent, awaiting." accentClass="bg-rose-500" />
             </div>
 
+            {/* ── Completion Alert Strip ── */}
+            {stats.completed > 0 && (
+              <div
+                className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 flex flex-wrap items-center justify-between gap-3"
+                role="status"
+              >
+                <p className="text-sm text-emerald-900 flex items-center gap-2">
+                  <span aria-hidden="true">🎉</span>
+                  <span>
+                    <strong className="font-semibold">{stats.completed} candidate{stats.completed === 1 ? "" : "s"}</strong>{" "}
+                    completed induction and {stats.completed === 1 ? "is" : "are"} ready for role assignment.
+                  </span>
+                </p>
+                <a
+                  href="#candidates-table"
+                  className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+                >
+                  Review →
+                </a>
+              </div>
+            )}
+
             {/* ── Employee Categories Filter ── */}
             <section aria-labelledby="cat-heading" className="bg-white border border-slate-200 rounded-2xl mb-6">
               <header className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-200">
@@ -536,7 +573,7 @@ export default function OnboardingDashboard({
             </section>
 
             {/* ── Onboarding Candidates Table ── */}
-            <section aria-labelledby="cand-heading" className="bg-white border border-slate-200 rounded-2xl mb-6">
+            <section id="candidates-table" aria-labelledby="cand-heading" className="bg-white border border-slate-200 rounded-2xl mb-6">
               <header className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
                 <h2 id="cand-heading" className="text-sm font-semibold text-slate-900 flex items-center gap-2">
                   Onboarding Candidates
@@ -567,15 +604,18 @@ export default function OnboardingDashboard({
                       <tr>
                         <th scope="col" className="px-5 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Employee</th>
                         <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Type</th>
+                        <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Branch</th>
                         <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Start</th>
                         <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Progress</th>
                         <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                        <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider sr-only">View</th>
+                        <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider sr-only">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
                       {filteredProfiles.map((p) => {
                         const pct = p.totalSteps > 0 ? Math.round((p.completedSteps / p.totalSteps) * 100) : 0;
+                        const branchName = branchByUserId?.[p.userId] ?? "—";
+                        const isCompleted = p.status === "Completed";
                         return (
                           <tr key={p.id} className="hover:bg-slate-50">
                             <td className="px-5 py-3">
@@ -590,6 +630,7 @@ export default function OnboardingDashboard({
                               </div>
                             </td>
                             <td className="px-3 py-3 text-xs text-slate-700">{categoryLabelForTemplate(p.workflowTemplate)}</td>
+                            <td className="px-3 py-3 text-xs font-mono text-slate-700">{branchName}</td>
                             <td className="px-3 py-3 text-xs text-slate-700 whitespace-nowrap">{formatDateShort(p.startDate)}</td>
                             <td className="px-3 py-3 min-w-[140px]">
                               <p className="text-[11px] text-slate-600 mb-1">{p.completedSteps}/{p.totalSteps} steps</p>
@@ -602,14 +643,24 @@ export default function OnboardingDashboard({
                                 {p.status}
                               </span>
                             </td>
-                            <td className="px-3 py-3 text-right">
-                              <Link
-                                href={`/induction/${p.linkToken}`}
-                                className="inline-flex items-center text-xs font-semibold text-blue-600 hover:text-blue-700"
-                                title="Open candidate's induction page"
-                              >
-                                View →
-                              </Link>
+                            <td className="px-3 py-3 text-right whitespace-nowrap">
+                              {isCompleted ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setAssigningProfile(p)}
+                                  className="inline-flex items-center rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+                                >
+                                  Assign Role →
+                                </button>
+                              ) : (
+                                <Link
+                                  href={`/induction/${p.linkToken}`}
+                                  className="inline-flex items-center text-xs font-semibold text-blue-600 hover:text-blue-700"
+                                  title="Open candidate's induction page"
+                                >
+                                  View →
+                                </Link>
+                              )}
                             </td>
                           </tr>
                         );
@@ -620,6 +671,21 @@ export default function OnboardingDashboard({
               )}
             </section>
           </>
+        )}
+
+        {/* ── Assign Role Modal (Phase 2B+) ── */}
+        {showHRLayout && assigningProfile && branches && activeUsers && (
+          <AssignRoleModal
+            profile={assigningProfile}
+            branches={branches}
+            departments={departments}
+            activeUsers={activeUsers}
+            onClose={() => setAssigningProfile(null)}
+            onSuccess={() => {
+              setAssigningProfile(null);
+              router.refresh();
+            }}
+          />
         )}
 
         {showHRLayout && (

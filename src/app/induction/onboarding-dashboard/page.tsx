@@ -6,6 +6,7 @@ import AppShell from "@/app/components/AppShell";
 import OnboardingDashboard from "@/app/induction/components/OnboardingDashboard";
 import { HRMSSidebar } from "@/app/induction/components/HRMSSidebar";
 import { canManageInductions } from "@/app/induction/roles";
+import { listBranches } from "@/lib/employeeQueries";
 import {
   getCombinedUpcomingExits,
   getCombinedUpcomingHires,
@@ -88,6 +89,9 @@ export default async function OnboardingDashboardPage({ searchParams }: PageProp
     departments,
     allProfiles,
     pendingRequests,
+    branches,
+    branchByUserId,
+    activeUsers,
   ] = await Promise.all([
     fetchHires ? getCombinedUpcomingHires(7, 7) : Promise.resolve([]),
     fetchExits ? getCombinedUpcomingExits(14, 0) : Promise.resolve([]),
@@ -96,6 +100,9 @@ export default async function OnboardingDashboardPage({ searchParams }: PageProp
     listDepartments(),
     fetchOnboardingExtras ? listAllInductionProfiles() : Promise.resolve([]),
     fetchOnboardingExtras ? listPendingInductionRequests() : Promise.resolve([]),
+    fetchOnboardingExtras ? listBranches() : Promise.resolve([]),
+    fetchOnboardingExtras ? fetchBranchByUserId() : Promise.resolve({}),
+    fetchOnboardingExtras ? fetchActiveUsersForReportsTo() : Promise.resolve([]),
   ]);
 
   const hires = hiresAll.filter((h) => Math.abs(h.daysUntilStart) <= 7);
@@ -130,9 +137,64 @@ export default async function OnboardingDashboardPage({ searchParams }: PageProp
             departments={departments}
             onboardingProfiles={onboardingProfiles}
             pendingRequests={pendingRequests}
+            branches={branches}
+            branchByUserId={branchByUserId}
+            activeUsers={activeUsers}
           />
         </div>
       </div>
     </AppShell>
   );
+}
+
+/** userId → branchName lookup for the Branch column in the candidates table. */
+async function fetchBranchByUserId(): Promise<Record<number, string | null>> {
+  const rows = await prisma.employment.findMany({
+    where: { status: { in: ["active", "onboarding"] } },
+    include: { branch: { select: { branch_name: true } } },
+    orderBy: { start_date: "desc" },
+  });
+  const out: Record<number, string | null> = {};
+  for (const r of rows) {
+    if (!(r.user_id in out)) {
+      out[r.user_id] = r.branch?.branch_name ?? null;
+    }
+  }
+  return out;
+}
+
+interface ActiveUserOption {
+  userId: number;
+  fullName: string;
+  email: string;
+  position: string | null;
+}
+
+/** Active users with manager-tier roles, for the "Reports To" dropdown in
+ *  the Assign Role modal. */
+async function fetchActiveUsersForReportsTo(): Promise<ActiveUserOption[]> {
+  const REPORTS_TO_ROLES = new Set(["superadmin", "ceo", "admin", "hr", "od", "hod"]);
+  const rows = await prisma.users.findMany({
+    where: { status: "active" },
+    include: {
+      user_profile: { select: { full_name: true } },
+      role: { select: { role_type: true } },
+      employment: {
+        where: { status: "active" },
+        orderBy: { start_date: "desc" },
+        take: 1,
+        select: { position: true },
+      },
+    },
+    orderBy: { email: "asc" },
+  });
+  type Row = (typeof rows)[number];
+  return rows
+    .filter((u: Row) => REPORTS_TO_ROLES.has((u.role?.role_type ?? "").toLowerCase()))
+    .map((u: Row) => ({
+      userId: u.user_id,
+      fullName: u.user_profile?.full_name ?? u.email,
+      email: u.email,
+      position: u.employment[0]?.position ?? null,
+    }));
 }
