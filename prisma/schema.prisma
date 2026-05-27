@@ -62,10 +62,10 @@ model branch {
 }
 
 model department {
-  department_id   Int                          @id @default(autoincrement())
-  department_name String                       @db.VarChar(100)
-  department_code String                       @unique @db.VarChar(10)
-  employment      employment[]
+  department_id     Int                          @id @default(autoincrement())
+  department_name   String                       @db.VarChar(100)
+  department_code   String                       @unique @db.VarChar(10)
+  employment        employment[]
   substep_templates induction_substep_template[]
 }
 
@@ -161,34 +161,40 @@ model user_profile {
 }
 
 model users {
-  user_id                                        Int                 @id @default(autoincrement())
-  email                                          String              @unique @db.VarChar(255)
-  password                                       String?             @db.VarChar(255)
+  user_id                                        Int                          @id @default(autoincrement())
+  email                                          String                       @unique @db.VarChar(255)
+  password                                       String?                      @db.VarChar(255)
   role_id                                        Int
-  status                                         String?             @default("active") @db.VarChar(50)
-  last_login                                     DateTime?           @db.Timestamptz(6)
-  created_at                                     DateTime            @default(now()) @db.Timestamptz(6)
-  updated_at                                     DateTime            @default(now()) @db.Timestamptz(6)
-  deleted_at                                     DateTime?           @db.Timestamptz(6)
+  status                                         String?                      @default("active") @db.VarChar(50)
+  last_login                                     DateTime?                    @db.Timestamptz(6)
+  created_at                                     DateTime                     @default(now()) @db.Timestamptz(6)
+  updated_at                                     DateTime                     @default(now()) @db.Timestamptz(6)
+  deleted_at                                     DateTime?                    @db.Timestamptz(6)
   attendance                                     attendance[]
   attendance_log                                 attendance_log[]
   bank_details                                   bank_details?
   claim                                          claim[]
   emergency_contact                              emergency_contact[]
   employment                                     employment[]
-  leave_request_leave_request_approved_byTousers leave_request[]     @relation("leave_request_approved_byTousers")
-  leave_request_leave_request_user_idTousers     leave_request[]     @relation("leave_request_user_idTousers")
+  leave_request_leave_request_approved_byTousers leave_request[]              @relation("leave_request_approved_byTousers")
+  leave_request_leave_request_user_idTousers     leave_request[]              @relation("leave_request_user_idTousers")
   user_profile                                   user_profile?
-  induction_profile                              induction_profile?  @relation("inductionProfile")
-  induction_buddy_for                            induction_profile[] @relation("inductionBuddy")
-  induction_created                              induction_profile[] @relation("inductionCreatedBy")
-  induction_responsible                          induction_step[]    @relation("inductionResponsible")
-  induction_completed                            induction_step[]    @relation("inductionCompletedBy")
-  induction_request_user                         induction_request[] @relation("induction_request_user")
-  induction_request_triggered_by                 induction_request[] @relation("induction_request_triggered_by")
-  assigned_recommendations                       recommendation[]    @relation("recommendation_assigned_to")
+  induction_profile                              induction_profile?           @relation("inductionProfile")
+  induction_buddy_for                            induction_profile[]          @relation("inductionBuddy")
+  induction_created                              induction_profile[]          @relation("inductionCreatedBy")
+  induction_responsible                          induction_step[]             @relation("inductionResponsible")
+  induction_completed                            induction_step[]             @relation("inductionCompletedBy")
+  induction_request_user                         induction_request[]          @relation("induction_request_user")
+  induction_request_triggered_by                 induction_request[]          @relation("induction_request_triggered_by")
+  assigned_recommendations                       recommendation[]             @relation("recommendation_assigned_to")
   manpower_schedules                             manpower_schedule[]
-  role                                           role                @relation(fields: [role_id], references: [role_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_users_role")
+  offboarding_case_user                          offboarding_case[]           @relation("OffboardingCaseUser")
+  offboarding_case_supervisor                    offboarding_case[]           @relation("OffboardingCaseSupervisor")
+  offboarding_case_created                       offboarding_case[]           @relation("OffboardingCaseCreatedBy")
+  offboarding_case_finance_processed             offboarding_case[]           @relation("OffboardingCaseFinanceProcessor")
+  offboarding_checklist_completed                offboarding_checklist_item[]
+  offboarding_audit_actor                        offboarding_audit_log[]
+  role                                           role                         @relation(fields: [role_id], references: [role_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_users_role")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -213,39 +219,39 @@ model claim {
 }
 
 model induction_profile {
-  id                Int       @id @default(autoincrement())
-  user_id           Int       @unique
-  induction_type    String    @default("Onboarding") @db.VarChar(20)
-  workflow_template String    @default("Standard") @db.VarChar(50)
-  buddy_user_id     Int?
-  link_token        String    @unique @db.VarChar(128)
-  link_expires_at   DateTime  @db.Timestamptz(6)
-  status            String    @default("Created") @db.VarChar(20)
-  start_date        DateTime  @db.Date
-  exit_date         DateTime? @db.Date
+  id                     Int       @id @default(autoincrement())
+  user_id                Int       @unique
+  induction_type         String    @default("Onboarding") @db.VarChar(20)
+  workflow_template      String    @default("Standard") @db.VarChar(50)
+  buddy_user_id          Int?
+  link_token             String    @unique @db.VarChar(128)
+  link_expires_at        DateTime  @db.Timestamptz(6)
+  status                 String    @default("Created") @db.VarChar(20)
+  start_date             DateTime  @db.Date
+  exit_date              DateTime? @db.Date
   // How many days HR assigns this induction to last. Used for the dashboard
   // "expected end" calculation. NULL = fall back to the template default
   // (Coach Part-timer ≈ 21, all other paths ≈ 3).
-  target_duration_days Int?
+  target_duration_days   Int?
   // Date on which the onboarding "welcome + credentials" email should go
   // out to the candidate. Defaults to start_date in the Add Employee
   // form but HR can pick an earlier/later date. NULL = no email scheduled
   // (older rows or HR opted out).
-  send_email_on     DateTime? @db.Date
+  send_email_on          DateTime? @db.Date
   // Stamped by the cron job (/api/jobs/send-onboarding-emails) the first
   // time it successfully dispatches the email. Used as the idempotency
   // guard so the cron never sends twice.
-  email_sent_at     DateTime? @db.Timestamptz(6)
+  email_sent_at          DateTime? @db.Timestamptz(6)
   // Plaintext temp password held only between save-employee time and
   // when the cron job dispatches the welcome email — the same value
   // HR sees in the credential overlay. Cleared (set to NULL) by the
   // cron the moment it sends, so the plaintext lives at most until
   // send_email_on + a cron tick. NULL once email_sent_at is set.
-  pending_email_password String? @db.VarChar(255)
-  created_by        Int
-  completed_at      DateTime? @db.Timestamptz(6)
-  created_at        DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at        DateTime  @updatedAt @db.Timestamptz(6)
+  pending_email_password String?   @db.VarChar(255)
+  created_by             Int
+  completed_at           DateTime? @db.Timestamptz(6)
+  created_at             DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime  @updatedAt @db.Timestamptz(6)
 
   user                  users                  @relation("inductionProfile", fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_induction_profile_user")
   buddy                 users?                 @relation("inductionBuddy", fields: [buddy_user_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction, map: "fk_induction_profile_buddy")
@@ -292,20 +298,20 @@ model induction_step {
 // Training" on CoachPartTimer.15). Defined once per template; shared across
 // every inductee on that template.
 model induction_substep_template {
-  id                  Int      @id @default(autoincrement())
-  template_key        String   @db.VarChar(50)
-  parent_step_number  Int
+  id                 Int      @id @default(autoincrement())
+  template_key       String   @db.VarChar(50)
+  parent_step_number Int
   // Department-scoped sub-tasks. NULL = global (legacy / applies to anyone
   // on this template). When set, only inductees whose employment.department_id
   // matches will see this sub-task in their auto-generated sub-workflow.
-  department_id       Int?
-  title               String   @db.VarChar(200)
-  description         String?
+  department_id      Int?
+  title              String   @db.VarChar(200)
+  description        String?
   // What the employee must submit to complete this sub-task.
   // One of: photo | video | screenshot | document | text | none.
-  evidence_type       String   @default("photo") @db.VarChar(20)
-  created_at          DateTime @default(now()) @db.Timestamptz(6)
-  updated_at          DateTime @updatedAt @db.Timestamptz(6)
+  evidence_type      String   @default("photo") @db.VarChar(20)
+  created_at         DateTime @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime @updatedAt @db.Timestamptz(6)
 
   department department? @relation(fields: [department_id], references: [department_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_induction_substep_template_department")
 
@@ -466,4 +472,131 @@ model manpower_schedule {
   @@unique([branch_id, start_date], map: "uq_manpower_schedule_branch_week")
   @@index([branch_id, start_date(sort: Desc)], map: "idx_manpower_schedule_branch_date")
   @@index([status], map: "idx_manpower_schedule_status")
+}
+
+// ============================================================
+// OFFBOARDING — standalone module added 2026-05-27
+//
+// One row per offboarding case. Separate from induction_profile (which
+// piggybacks on the same table for the old offboarding-as-induction flow)
+// so the 5-stage workflow + audit trail + finance fields have a clean
+// home. Old induction_profile-with-type-Offboarding rows remain readable
+// in legacy views but are not used by the new flow.
+//
+// Spec stages:
+//   Trigger → HR Review → Exit Interview → Checklist → Sign-off & Done
+// ============================================================
+
+model offboarding_case {
+  id            Int    @id @default(autoincrement())
+  user_id       Int
+  case_type     String @db.VarChar(20)
+  // "Resign" | "ContractEnded"
+  status        String @default("Pending") @db.VarChar(20)
+  // "Pending" | "InProgress" | "Completed"
+  current_stage String @default("Trigger") @db.VarChar(30)
+  // "Trigger" | "HRReview" | "ExitInterview" | "Checklist" | "SignOff" | "Done"
+
+  // Stage 1 — HR Review
+  last_working_day        DateTime? @db.Date
+  exit_interview_date     DateTime? @db.Date
+  exit_interview_time     String?   @db.VarChar(20)
+  exit_interview_location String?   @db.VarChar(200)
+
+  // Stage 2 — Exit Interview
+  exit_interview_completed_at DateTime? @db.Timestamptz(6)
+  exit_interview_notes        String?
+  exit_interview_outcome      String?
+
+  // Trigger — Contract Ended path
+  supervisor_decision    String?   @db.VarChar(20)
+  // null | "Continue" | "End"
+  supervisor_decision_at DateTime? @db.Timestamptz(6)
+
+  // Trigger — Resign path
+  resignation_letter_file_id String?   @db.VarChar(128)
+  resigned_at                DateTime? @db.Timestamptz(6)
+
+  // Stage 4 — Supervisor Sign-off
+  // supervisor_user_id is resolved at case creation:
+  //   HQ staff → their department's HOD
+  //   Branch staff → their branch's BM
+  supervisor_user_id        Int?
+  supervisor_signoff_status String?   @db.VarChar(20)
+  // null | "Pending" | "Approved" | "FlaggedIssue"
+  supervisor_signoff_at     DateTime? @db.Timestamptz(6)
+  supervisor_remarks        String?
+
+  // Stage 5 — Finance
+  finance_remarks         String?
+  final_pay_breakdown     Json?
+  // Structured payload: { proRated, outstandingPettyCash, deductions, total }
+  finance_processed_at    DateTime? @db.Timestamptz(6)
+  finance_processed_by_id Int?
+
+  created_by_id Int
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime  @updatedAt @db.Timestamptz(6)
+  completed_at  DateTime? @db.Timestamptz(6)
+
+  user                 users                        @relation("OffboardingCaseUser", fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_offboarding_case_user")
+  supervisor           users?                       @relation("OffboardingCaseSupervisor", fields: [supervisor_user_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction, map: "fk_offboarding_case_supervisor")
+  created_by           users                        @relation("OffboardingCaseCreatedBy", fields: [created_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_offboarding_case_creator")
+  finance_processed_by users?                       @relation("OffboardingCaseFinanceProcessor", fields: [finance_processed_by_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction, map: "fk_offboarding_case_finance")
+  checklist_items      offboarding_checklist_item[]
+  audit_log            offboarding_audit_log[]
+
+  @@index([user_id], map: "idx_offboarding_case_user")
+  @@index([status], map: "idx_offboarding_case_status")
+  @@index([current_stage], map: "idx_offboarding_case_stage")
+  @@index([last_working_day], map: "idx_offboarding_case_last_day")
+}
+
+// Five items seeded per case (one row each):
+//   portal_deactivate, whatsapp_remove, browser_clear,
+//   equipment_return, petty_cash
+model offboarding_checklist_item {
+  id              Int       @id @default(autoincrement())
+  case_id         Int
+  item_key        String    @db.VarChar(50)
+  title           String    @db.VarChar(200)
+  actor_role      String    @db.VarChar(50)
+  // "HR" | "IT" | "Supervisor" | "Candidate"
+  status          String    @default("Pending") @db.VarChar(20)
+  // "Pending" | "Done"
+  completed_at    DateTime? @db.Timestamptz(6)
+  completed_by_id Int?
+  notes           String?
+  // Only populated for the petty_cash item — links to the candidate's
+  // settlement claim in the Claims module. Read-only display in the
+  // checklist; status mirrors the claim's status.
+  linked_claim_id Int?
+
+  case         offboarding_case @relation(fields: [case_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_offb_checklist_case")
+  completed_by users?           @relation(fields: [completed_by_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction, map: "fk_offb_checklist_user")
+
+  @@unique([case_id, item_key], map: "uq_offb_checklist_case_item")
+  @@index([case_id], map: "idx_offb_checklist_case")
+}
+
+// Full audit trail per case. One row per discrete event. Never updated;
+// only inserted. Sort by created_at to replay the case history.
+model offboarding_audit_log {
+  id         Int      @id @default(autoincrement())
+  case_id    Int
+  actor_id   Int?
+  // null = system event (e.g. account deactivation, scheduled email sent)
+  action     String   @db.VarChar(50)
+  // "CaseCreated" | "StageAdvanced" | "ChecklistItemCompleted" |
+  // "EmailSent" | "SupervisorDecision" | "SupervisorSignOff" |
+  // "FinanceProcessed" | "AccountDeactivated"
+  stage      String?  @db.VarChar(30)
+  details    Json?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  case  offboarding_case @relation(fields: [case_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_offb_audit_case")
+  actor users?           @relation(fields: [actor_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction, map: "fk_offb_audit_actor")
+
+  @@index([case_id], map: "idx_offb_audit_case")
+  @@index([created_at], map: "idx_offb_audit_at")
 }

@@ -94,7 +94,7 @@ const modules: HrmsModule[] = [
     id: "offboarding",
     title: "Offboarding",
     description: "Manage employee exits",
-    href: "/induction/onboarding-dashboard?type=offboarding",
+    href: "/dashboards/offboarding",
     Icon: UserMinus,
     accent: "bg-rose-600",
     accentHover: "group-hover:bg-rose-700",
