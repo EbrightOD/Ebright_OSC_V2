@@ -158,13 +158,8 @@ function FormView({
       const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
       const loginLink = `${baseUrl}/induction/${result.token ?? ""}`;
 
-      // TODO: real email send — currently just logged to console
-      console.info("[induction] mock email queued:", {
-        to: employeeEmail,
-        username,
-        tempPassword,
-        loginLink,
-      });
+      // TODO: wire up real email send (Resend). Credentials are shown
+      // on-screen via the credential screen only — never logged.
 
       setCredentials({
         candidateName: employeeName.trim(),

@@ -178,6 +178,7 @@ const DEFAULT_DURATION_DAYS: Record<string, number> = {
   Standard:               3,   // Regular Intern · HQ
   ProtegeInternBranch:    3,
   CoachPartTimer:        21,
+  CoachFullTimer:        21,   // matches the "3-week training" label + part-timer
   FullTimer:              3,
   "IT-Heavy":             7,
   Remote:                 7,

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { initialsFromName } from "@/lib/text";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -71,7 +72,7 @@ const EMPLOYEE_TYPE_TEMPLATES: ReadonlyArray<{
   location: string;
   accent: string; // tailwind gradient
 }> = [
-  { key: "Standard",            short: "Regular Intern",      location: "HQ",                       accent: "from-sky-500 to-blue-600" },
+  { key: "Standard",            short: "Intern",              location: "HQ",                       accent: "from-sky-500 to-blue-600" },
   { key: "ProtegeInternBranch", short: "Protege Intern",      location: "Assigned Branch",          accent: "from-violet-500 to-indigo-600" },
   { key: "CoachPartTimer",      short: "Coach (Part-timer)",  location: "Branch + 3-week training", accent: "from-amber-500 to-orange-600" },
   { key: "FullTimer",           short: "Full-timer",          location: "HQ or Branch",             accent: "from-emerald-500 to-teal-600" },
@@ -134,7 +135,7 @@ const CATEGORIES: ReadonlyArray<{
   textClass: string;
   barClass: string;
 }> = [
-  { key: "Standard",            label: "Regular Intern",    icon: "👤", bgClass: "bg-blue-50",    borderClass: "border-blue-200",    textClass: "text-blue-700",    barClass: "bg-blue-500" },
+  { key: "Standard",            label: "Intern",            icon: "👤", bgClass: "bg-blue-50",    borderClass: "border-blue-200",    textClass: "text-blue-700",    barClass: "bg-blue-500" },
   { key: "ProtegeInternBranch", label: "Protege Intern",    icon: "🌱", bgClass: "bg-violet-50",  borderClass: "border-violet-200",  textClass: "text-violet-700",  barClass: "bg-violet-500" },
   { key: "CoachPartTimer",      label: "Coach (Part-timer)", icon: "🎯", bgClass: "bg-amber-50",   borderClass: "border-amber-200",   textClass: "text-amber-700",   barClass: "bg-amber-500" },
   { key: "CoachFullTimer",      label: "Coach (Full-timer)", icon: "⭐", bgClass: "bg-emerald-50", borderClass: "border-emerald-200", textClass: "text-emerald-700", barClass: "bg-emerald-500" },
@@ -170,13 +171,6 @@ function countProfilesByTemplate(
     if (p.status === "Completed") completed += 1;
   }
   return { total, completed };
-}
-
-function initialsFromName(name: string): string {
-  const parts = name.trim().split(/\s+/);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
 function formatDateShort(iso: string | null): string {
@@ -262,6 +256,10 @@ export default function OnboardingDashboard({
   // Phase 2B state — category filter + search for the candidates table.
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  // A5 — candidate-list filter bar (mirrors the Employee Dashboard): branch
+  // + induction-status filters that stack with the category/search filters.
+  const [branchFilter, setBranchFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [requestActionPending, setRequestActionPending] = useState<Set<number>>(new Set());
   const [requestActionErrors, setRequestActionErrors] = useState<Map<number, string>>(new Map());
   // Phase 2B+ state — Assign Role modal target.
@@ -282,8 +280,27 @@ export default function OnboardingDashboard({
 
   const stats = computeOnboardingStats(profilesForStats);
 
+  // Branch dropdown options — distinct branch names present among candidates,
+  // falling back to the full branch list passed from the server.
+  const branchOptions = Array.from(
+    new Set(
+      profilesForStats
+        .map((p) => branchByUserId?.[p.userId] ?? null)
+        .filter((b): b is string => Boolean(b)),
+    ),
+  ).sort((a, b) => a.localeCompare(b));
+
   const filteredProfiles = profilesForStats.filter((p) => {
     if (categoryFilter && p.workflowTemplate !== categoryFilter) return false;
+    if (branchFilter && (branchByUserId?.[p.userId] ?? "") !== branchFilter) return false;
+    if (statusFilter) {
+      // "Not Started" maps to the Sent/Created statuses (mirrors the stat box).
+      const matchesStatus =
+        statusFilter === "Not Started"
+          ? p.status === "Sent" || p.status === "Created"
+          : p.status === statusFilter;
+      if (!matchesStatus) return false;
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
       const hay = `${p.employeeName} ${p.employeeEmail}`.toLowerCase();
@@ -291,6 +308,16 @@ export default function OnboardingDashboard({
     }
     return true;
   });
+
+  const hasCandidateFilters = Boolean(
+    searchQuery || branchFilter || statusFilter || categoryFilter,
+  );
+  const clearCandidateFilters = () => {
+    setSearchQuery("");
+    setBranchFilter("");
+    setStatusFilter("");
+    setCategoryFilter(null);
+  };
 
   const handleAcceptRequest = (requestId: number) => {
     setRequestActionPending((p) => new Set(p).add(requestId));
@@ -326,13 +353,8 @@ export default function OnboardingDashboard({
           result.token
             ? `${window.location.origin}/induction/${result.token}`
             : result.trainingLink;
-        // TODO: real email send — currently just logged to console
-        console.info("[induction] mock email queued (accept):", {
-          to: matchingRequest.email,
-          username,
-          tempPassword,
-          loginLink,
-        });
+        // TODO: wire up real email send (Resend). Credentials are shown
+        // on-screen via the credential modal only — never logged.
         setCreateModalState({
           mode: "credential",
           data: {
@@ -468,10 +490,38 @@ export default function OnboardingDashboard({
           <>
             {/* ── 4 Stat Cards ── */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-              <StatCard label="Total Onboarding" value={stats.total} subtitle="Active pipeline." accentClass="bg-blue-500" />
-              <StatCard label="Completed" value={stats.completed} subtitle="All days done." accentClass="bg-emerald-500" />
-              <StatCard label="In Progress" value={stats.inProgress} subtitle="Actively training." accentClass="bg-amber-500" />
-              <StatCard label="Not Started" value={stats.notStarted} subtitle="Link sent, awaiting." accentClass="bg-rose-500" />
+              <StatCard
+                label="Total Active"
+                value={stats.total}
+                subtitle="Full active pipeline."
+                accentClass="bg-blue-500"
+                onClick={() => setStatusFilter("")}
+                isActive={statusFilter === ""}
+              />
+              <StatCard
+                label="Post-Onboarding"
+                value={stats.completed}
+                subtitle="Induction done, pending role assignment."
+                accentClass="bg-emerald-500"
+                onClick={() => setStatusFilter((cur) => (cur === "Completed" ? "" : "Completed"))}
+                isActive={statusFilter === "Completed"}
+              />
+              <StatCard
+                label="In Progress"
+                value={stats.inProgress}
+                subtitle="Actively training."
+                accentClass="bg-amber-500"
+                onClick={() => setStatusFilter((cur) => (cur === "In Progress" ? "" : "In Progress"))}
+                isActive={statusFilter === "In Progress"}
+              />
+              <StatCard
+                label="Pre-Onboarding"
+                value={stats.notStarted}
+                subtitle="Link sent, awaiting start."
+                accentClass="bg-rose-500"
+                onClick={() => setStatusFilter((cur) => (cur === "Not Started" ? "" : "Not Started"))}
+                isActive={statusFilter === "Not Started"}
+              />
             </div>
 
             {/* ── Completion Alert Strip ── */}
@@ -607,21 +657,76 @@ export default function OnboardingDashboard({
 
             {/* ── Onboarding Candidates Table ── */}
             <section id="candidates-table" aria-labelledby="cand-heading" className="bg-white border border-slate-200 rounded-2xl mb-6">
-              <header className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-                <h2 id="cand-heading" className="text-sm font-semibold text-slate-900 flex items-center gap-2">
-                  Onboarding Candidates
-                  <span className="inline-flex items-center justify-center min-w-[20px] h-5 rounded-full bg-slate-200 text-slate-700 text-[11px] font-semibold px-1.5">
-                    {filteredProfiles.length}
-                  </span>
-                </h2>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="search"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="🔍 Search name or email…"
-                    className="rounded-md border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-blue-500 focus:outline-none w-56"
-                  />
+              <header className="px-5 py-4 border-b border-slate-200 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h2 id="cand-heading" className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                    Onboarding Candidates
+                    <span className="inline-flex items-center justify-center min-w-[20px] h-5 rounded-full bg-slate-200 text-slate-700 text-[11px] font-semibold px-1.5">
+                      {filteredProfiles.length}
+                    </span>
+                  </h2>
+                  {hasCandidateFilters && (
+                    <button
+                      type="button"
+                      onClick={clearCandidateFilters}
+                      className="text-xs font-semibold text-slate-600 hover:text-slate-900 underline underline-offset-2"
+                    >
+                      ✕ Clear filters
+                    </button>
+                  )}
+                </div>
+                {/* A5 — filter bar mirroring the Employee Dashboard: search +
+                    branch + role/type + status. Stacks with the Employee
+                    Categories cards (both drive the same category filter). */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="relative flex-1 min-w-[220px]">
+                    <input
+                      type="search"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search by name or email…"
+                      className="w-full h-9 rounded-md border border-slate-300 bg-slate-50 px-3 text-xs text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                  <label className="relative">
+                    <span className="sr-only">Branch</span>
+                    <select
+                      value={branchFilter}
+                      onChange={(e) => setBranchFilter(e.target.value)}
+                      className="h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 focus:border-blue-500 focus:outline-none cursor-pointer min-w-[140px]"
+                    >
+                      <option value="">All Branches</option>
+                      {branchOptions.map((b) => (
+                        <option key={b} value={b}>{b}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="relative">
+                    <span className="sr-only">Role</span>
+                    <select
+                      value={categoryFilter ?? ""}
+                      onChange={(e) => setCategoryFilter(e.target.value || null)}
+                      className="h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 focus:border-blue-500 focus:outline-none cursor-pointer min-w-[140px]"
+                    >
+                      <option value="">All Roles</option>
+                      {CATEGORIES.map((c) => (
+                        <option key={c.key} value={c.key}>{c.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="relative">
+                    <span className="sr-only">Status</span>
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 focus:border-blue-500 focus:outline-none cursor-pointer min-w-[140px]"
+                    >
+                      <option value="">All Status</option>
+                      <option value="Not Started">Pre-Onboarding</option>
+                      <option value="In Progress">In Progress</option>
+                      <option value="Completed">Post-Onboarding</option>
+                    </select>
+                  </label>
                 </div>
               </header>
               {filteredProfiles.length === 0 ? (
@@ -1004,7 +1109,7 @@ function InteractiveWorkflowSection({
 
   // Manager-side workflow switcher state. Only used when previewing reference
   // workflows (i.e. the viewer doesn't have an active induction of this kind).
-  // Default is "Standard" = Regular Intern · HQ.
+  // Default is "Standard" = Intern · HQ.
   const [selectedTemplateKey, setSelectedTemplateKey] = useState<string>("Standard");
 
   // Department selector for the Department Training sub-workflow. Defaults
@@ -1197,18 +1302,38 @@ function StatCard({
   value,
   subtitle,
   accentClass,
+  onClick,
+  isActive = false,
 }: {
   label: string;
   value: number;
   subtitle: string;
   accentClass: string;
+  onClick?: () => void;
+  isActive?: boolean;
 }) {
-  return (
-    <div className="relative bg-white border border-slate-200 rounded-2xl p-4 overflow-hidden">
+  const body = (
+    <>
       <div className={`absolute top-0 left-0 right-0 h-1 ${accentClass}`} aria-hidden="true" />
       <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{label}</p>
       <p className="mt-2 text-3xl font-bold text-slate-900 tabular-nums leading-none">{value}</p>
       <p className="mt-1.5 text-[11px] text-slate-500">{subtitle}</p>
-    </div>
+    </>
   );
+  const base = "relative bg-white border rounded-2xl p-4 overflow-hidden transition";
+  if (typeof onClick === "function") {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        aria-pressed={isActive}
+        className={`${base} w-full text-left cursor-pointer hover:border-slate-300 hover:shadow-md ${
+          isActive ? "border-slate-400 shadow-md ring-2 ring-slate-200" : "border-slate-200"
+        }`}
+      >
+        {body}
+      </button>
+    );
+  }
+  return <div className={`${base} border-slate-200`}>{body}</div>;
 }

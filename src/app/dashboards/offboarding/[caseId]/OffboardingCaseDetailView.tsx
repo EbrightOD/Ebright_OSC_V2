@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { initialsFromName } from "@/lib/text";
 import {
   ArrowLeft,
   ChevronRight,
@@ -43,13 +44,6 @@ const ACTOR_PILL: Record<string, string> = {
   Supervisor: "bg-amber-100 text-amber-700",
   Candidate: "bg-emerald-100 text-emerald-700",
 };
-
-function initialsFromName(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
 
 function formatLongDate(iso: string | null): string {
   if (!iso) return "—";

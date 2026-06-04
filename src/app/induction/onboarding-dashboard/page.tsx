@@ -116,11 +116,17 @@ export default async function OnboardingDashboardPage({ searchParams }: PageProp
   );
 
   // For the new HR view: only show onboarding profiles (not offboarding) in
-  // the candidates table + stats. Excludes archived AND role-assigned
-  // candidates (the latter have been promoted out of the pipeline via the
-  // admin Assign Role flow).
+  // the candidates table + stats. Excludes role-assigned candidates (promoted
+  // out of the pipeline via the admin Assign Role flow).
+  //
+  // A6 fix: the 5-day `isArchived` window (start_date older than 5 days) is
+  // NOT applied here. The Employee Dashboard counts the same induction_profile
+  // table with no start-date filter, so excluding "archived" candidates made
+  // this page show 0 while the Employee Dashboard still listed them (e.g.
+  // candidates whose start_date is already a few days past). Both pages now
+  // reflect the same active onboarding pool.
   const onboardingProfiles = allProfiles.filter(
-    (p) => p.inductionType !== "Offboarding" && !p.isArchived && p.status !== "Assigned",
+    (p) => p.inductionType !== "Offboarding" && p.status !== "Assigned",
   );
 
   const userEmail = session.user.email;

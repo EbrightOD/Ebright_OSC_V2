@@ -59,8 +59,8 @@ export default async function McDetailPage() {
                   <tr>
                     <th scope="col" className="px-4 py-3 text-left font-medium">#</th>
                     <th scope="col" className="px-4 py-3 text-left font-medium">Name</th>
-                    <th scope="col" className="px-4 py-3 text-left font-medium">Department / Branch</th>
-                    <th scope="col" className="px-4 py-3 text-left font-medium">Reason</th>
+                    <th scope="col" className="px-4 py-3 text-left font-medium">Email</th>
+                    <th scope="col" className="px-4 py-3 text-left font-medium">Type</th>
                     <th scope="col" className="px-4 py-3 text-left font-medium">Date</th>
                     <th scope="col" className="px-4 py-3 text-left font-medium">Source</th>
                   </tr>

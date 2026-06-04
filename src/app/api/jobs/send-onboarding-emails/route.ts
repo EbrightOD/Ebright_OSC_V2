@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendOnboardingWelcomeEmail } from "@/lib/induction-email";
@@ -51,7 +52,12 @@ export async function POST(req: NextRequest) {
   }
   const auth = req.headers.get("authorization") ?? "";
   const provided = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
-  if (provided !== expectedSecret) {
+  const expectedBuf = Buffer.from(expectedSecret);
+  const providedBuf = Buffer.from(provided);
+  const authorized =
+    providedBuf.length === expectedBuf.length &&
+    timingSafeEqual(providedBuf, expectedBuf);
+  if (!authorized) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 

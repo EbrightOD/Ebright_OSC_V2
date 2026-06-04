@@ -231,18 +231,6 @@ export async function createInduction(
       return profile;
     });
 
-    const employeeLabel = employee.user_profile?.full_name ?? employee.email;
-    console.info(
-      "[induction] mock email:",
-      JSON.stringify({
-        to: employee.email,
-        recipient: employeeLabel,
-        token,
-        link: `/induction/${token}`,
-        expiresAt: expiresAt.toISOString(),
-      }),
-    );
-
     revalidatePath("/induction/onboarding-dashboard");
 
     return { ok: true, inductionProfileId: created.id, token };
@@ -642,16 +630,6 @@ export async function acceptInductionRequest(
     const baseUrl = await getRequestBaseUrl();
     const trainingLink = `${baseUrl}/induction/${token}`;
 
-    console.info(
-      "[induction] mock email after accept:",
-      JSON.stringify({
-        to: request.user.email,
-        recipient: request.user.user_profile?.full_name ?? request.user.email,
-        token,
-        link: trainingLink,
-      }),
-    );
-
     return {
       ok: true,
       trainingLink,
@@ -990,15 +968,6 @@ export async function markStepCompleteByToken(
     return { ok: false, error: `Could not mark step complete: ${msg}` };
   }
 
-  console.info(
-    "[induction] mock notification:",
-    JSON.stringify({
-      step: step.title,
-      stepId: step.id,
-      notify: step.responsible_person?.email ?? "(no responsible person assigned)",
-    }),
-  );
-
   revalidatePath(`/induction/${token}`);
   revalidatePath("/induction/onboarding-dashboard");
   return { ok: true };
@@ -1176,6 +1145,26 @@ export async function submitSurveyResponse(
   responses: Record<string, string | number>,
 ): Promise<SurveySubmissionResult> {
   try {
+    // Authz: only the induction's own candidate or an induction manager may
+    // submit a survey response (action was previously unauthenticated).
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email) return { ok: false, error: "Not authenticated." };
+    const [actor, profile] = await Promise.all([
+      prisma.users.findUnique({
+        where: { email: session.user.email },
+        select: { user_id: true, role: { select: { role_type: true } } },
+      }),
+      prisma.induction_profile.findUnique({
+        where: { id: inductionProfileId },
+        select: { user_id: true },
+      }),
+    ]);
+    if (!profile) return { ok: false, error: "Induction profile not found." };
+    const isOwner = actor?.user_id === profile.user_id;
+    if (!isOwner && !canManageInductions(actor?.role?.role_type ?? null)) {
+      return { ok: false, error: "Not authorized to submit this survey." };
+    }
+
     const template = await prisma.survey_template.findUnique({
       where: { milestone },
     });
@@ -1203,11 +1192,6 @@ export async function submitSurveyResponse(
         submitted_at: new Date(),
       },
     });
-
-    console.info(
-      "[induction] survey submitted:",
-      JSON.stringify({ inductionProfileId, milestone, score: sentimentScore }),
-    );
 
     return { ok: true, message: "Survey submitted." };
   } catch (error) {

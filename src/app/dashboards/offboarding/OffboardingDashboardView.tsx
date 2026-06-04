@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { initialsFromName } from "@/lib/text";
 import { useState, type ComponentType, type SVGProps } from "react";
 import {
   ChevronRight,
@@ -39,13 +40,6 @@ const STAGE_PILL: Record<OffboardingStage, string> = {
   SignOff: "bg-rose-50 text-rose-700",
   Done: "bg-emerald-50 text-emerald-700",
 };
-
-function initialsFromName(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
 
 function formatLongDate(iso: string | null): string {
   if (!iso) return "—";

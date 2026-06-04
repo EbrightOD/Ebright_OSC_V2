@@ -59,8 +59,8 @@ export default async function AnnualLeaveDetailPage() {
                   <tr>
                     <th scope="col" className="px-4 py-3 text-left font-medium">#</th>
                     <th scope="col" className="px-4 py-3 text-left font-medium">Name</th>
-                    <th scope="col" className="px-4 py-3 text-left font-medium">Department / Branch</th>
-                    <th scope="col" className="px-4 py-3 text-left font-medium">Duration / Type</th>
+                    <th scope="col" className="px-4 py-3 text-left font-medium">Email</th>
+                    <th scope="col" className="px-4 py-3 text-left font-medium">Type</th>
                     <th scope="col" className="px-4 py-3 text-left font-medium">Date</th>
                     <th scope="col" className="px-4 py-3 text-left font-medium">Source</th>
                   </tr>
@@ -69,7 +69,7 @@ export default async function AnnualLeaveDetailPage() {
                   {rows.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">
-                        No annual leave in the past week.
+                        No annual leave in the next 2 weeks.
                       </td>
                     </tr>
                   ) : (

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { initialsFromName } from "@/lib/text";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ChevronRight, Home } from "lucide-react";
@@ -45,13 +46,6 @@ interface Props {
   assignableWorkflows: AssignableWorkflowOption[];
   /** Whether the viewer can assign a workflow (HR/HOD/superadmin). */
   canAssignWorkflow: boolean;
-}
-
-function initialsFromName(name: string): string {
-  const parts = name.trim().split(/\s+/);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
 function formatLongDate(iso: string | null): string {

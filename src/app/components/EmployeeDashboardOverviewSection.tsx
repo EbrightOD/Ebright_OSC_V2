@@ -1,14 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { initialsFromName } from "@/lib/text";
 import { useRef, useState, type ComponentType, type SVGProps } from "react";
 import {
   Users,
   Building2,
   Network,
   UserPlus,
-  CheckCircle2,
-  PartyPopper,
 } from "lucide-react";
 import {
   typeForWorkflowTemplate,
@@ -73,11 +72,9 @@ export function EmployeeDashboardOverviewSection({ stats, candidates }: Props) {
     });
   };
 
-  const showCompletionAlert = stats.onboardingCompleted > 0;
-
   return (
     <div className="mb-6 space-y-4">
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard
           label="Total Staff"
           value={stats.totalStaff}
@@ -108,39 +105,7 @@ export function EmployeeDashboardOverviewSection({ stats, candidates }: Props) {
           onClick={() => openFilter("active")}
           isActive={filter === "active"}
         />
-        <StatCard
-          label="Completed"
-          value={stats.onboardingCompleted}
-          subtitle="This cycle"
-          accentClass="bg-emerald-500"
-          Icon={CheckCircle2}
-          onClick={() => openFilter("completed")}
-          isActive={filter === "completed"}
-        />
       </div>
-
-      {showCompletionAlert && filter !== "completed" && (
-        <div
-          className="rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-emerald-100/40 px-4 py-3 flex items-center justify-between gap-3 flex-wrap"
-          role="status"
-        >
-          <p className="text-sm text-emerald-900 flex items-center gap-2">
-            <PartyPopper className="w-4 h-4 text-emerald-600 shrink-0" aria-hidden="true" />
-            <span>
-              <span className="font-bold">{stats.onboardingCompleted}</span> candidate
-              {stats.onboardingCompleted === 1 ? "" : "s"} have completed induction and
-              are ready for role assignment.
-            </span>
-          </p>
-          <button
-            type="button"
-            onClick={() => openFilter("completed")}
-            className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 shrink-0"
-          >
-            Review →
-          </button>
-        </div>
-      )}
 
       {filter !== null && (
         <div ref={panelRef}>
@@ -221,13 +186,6 @@ const TYPE_AVATAR_STYLES: Record<EmployeeTypeKey, string> = {
   "coach-full": "bg-emerald-100 text-emerald-700",
   "fulltime-hq": "bg-rose-100 text-rose-700",
 };
-
-function initialsFromName(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
 
 function OnboardingCandidatesPanel({
   rows,
@@ -333,7 +291,12 @@ function OnboardingCandidatesPanel({
                         </div>
                       </div>
                     </td>
-                    <td className="px-3 py-3 text-xs text-slate-700">{empType.label}</td>
+                    <td className="px-3 py-3 text-xs text-slate-700">
+                      {/* A7: display "Intern" for the regular-intern type on this
+                          page only — the shared induction-task-spec label is left
+                          untouched so other modules are unaffected. */}
+                      {empType.key === "regular-intern" ? "Intern" : empType.label}
+                    </td>
                     <td className="px-3 py-3 text-xs text-slate-700">{r.departmentName ?? "—"}</td>
                     <td className="px-3 py-3 text-xs font-mono text-slate-700">{r.branchCode ?? "—"}</td>
                     <td className="px-3 py-3">
