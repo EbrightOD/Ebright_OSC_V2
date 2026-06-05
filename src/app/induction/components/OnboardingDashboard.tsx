@@ -566,32 +566,26 @@ export default function OnboardingDashboard({
                   </button>
                 )}
               </header>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 p-4">
+              <div className="flex flex-wrap gap-2 p-4">
                 {CATEGORIES.map((cat) => {
                   const counts = countProfilesByTemplate(profilesForStats, cat.key);
                   const active = categoryFilter === cat.key;
-                  const pct = counts.total > 0 ? Math.round((counts.completed / counts.total) * 100) : 0;
                   return (
                     <button
                       key={cat.key}
                       type="button"
                       onClick={() => setCategoryFilter(active ? null : cat.key)}
                       aria-pressed={active}
-                      className={`text-left rounded-lg border-2 p-2 transition ${
+                      className={`inline-flex items-center gap-2 rounded-full border-2 px-3 py-1 text-xs transition ${
                         active
                           ? `${cat.borderClass} ${cat.bgClass} shadow-sm`
                           : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
                       }`}
                     >
-                      {/* Per Phase A spec: no icons on category cards */}
-                      <p className={`text-xs font-semibold ${active ? cat.textClass : "text-slate-900"}`}>{cat.label}</p>
-                      <div className="mt-1.5 flex items-center justify-between gap-1 text-[11px]">
-                        <span className="text-slate-500">{counts.total} total</span>
-                        <span className="font-semibold text-emerald-700">{counts.completed} done</span>
-                      </div>
-                      <div className="mt-1.5 h-1 rounded-full bg-slate-200 overflow-hidden">
-                        <div className={`h-full ${cat.barClass}`} style={{ width: `${pct}%` }} />
-                      </div>
+                      <span className={`font-semibold ${active ? cat.textClass : "text-slate-900"}`}>{cat.label}</span>
+                      <span className="text-slate-500">
+                        {counts.total} total · <span className="font-semibold text-emerald-700">{counts.completed} done</span>
+                      </span>
                     </button>
                   );
                 })}

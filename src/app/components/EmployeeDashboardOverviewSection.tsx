@@ -2,7 +2,13 @@
 
 import Link from "next/link";
 import { initialsFromName } from "@/lib/text";
-import { useRef, useState } from "react";
+import { useRef, useState, type ComponentType, type SVGProps } from "react";
+import {
+  Users,
+  Building2,
+  Network,
+  UserPlus,
+} from "lucide-react";
 import {
   typeForWorkflowTemplate,
   type EmployeeTypeKey,
@@ -52,36 +58,11 @@ interface Props {
   candidates: CandidatePanelRow[];
 }
 
-type PanelFilter = "all" | "notStarted" | "inProgress" | "completed" | null;
+type PanelFilter = "active" | "completed" | null;
 
-/** Onboarding pipeline status counts derived from the candidate rows. Mirrors
- *  the Onboarding Page buckets so both pages agree:
- *    Pre-Onboarding = Sent/Created · In Progress = In Progress · Post = Completed */
-function computeStatusCounts(rows: CandidatePanelRow[]) {
-  let total = 0;
-  let notStarted = 0;
-  let inProgress = 0;
-  let completed = 0;
-  for (const r of rows) {
-    const s = r.status.toLowerCase();
-    if (s === "completed") {
-      completed++;
-      total++;
-    } else if (s === "in progress") {
-      inProgress++;
-      total++;
-    } else if (s === "sent" || s === "created") {
-      notStarted++;
-      total++;
-    }
-  }
-  return { total, notStarted, inProgress, completed };
-}
-
-export function EmployeeDashboardOverviewSection({ candidates }: Props) {
+export function EmployeeDashboardOverviewSection({ stats, candidates }: Props) {
   const [filter, setFilter] = useState<PanelFilter>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
-  const counts = computeStatusCounts(candidates);
 
   const openFilter = (f: Exclude<PanelFilter, null>) => {
     setFilter((cur) => (cur === f ? null : f));
@@ -95,36 +76,34 @@ export function EmployeeDashboardOverviewSection({ candidates }: Props) {
     <div className="mb-6 space-y-4">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard
-          label="Total Active"
-          value={counts.total}
-          subtitle="Full active pipeline."
+          label="Total Staff"
+          value={stats.totalStaff}
+          subtitle="Active accounts"
           accentClass="bg-blue-500"
-          onClick={() => openFilter("all")}
-          isActive={filter === "all"}
+          Icon={Users}
         />
         <StatCard
-          label="Pre-Onboarding"
-          value={counts.notStarted}
-          subtitle="Link sent, awaiting start."
-          accentClass="bg-rose-500"
-          onClick={() => openFilter("notStarted")}
-          isActive={filter === "notStarted"}
+          label="Branches"
+          value={stats.branchCount}
+          subtitle="HQ + others"
+          accentClass="bg-violet-500"
+          Icon={Building2}
         />
         <StatCard
-          label="In Progress"
-          value={counts.inProgress}
-          subtitle="Actively training."
+          label="Departments"
+          value={stats.departmentCount}
+          subtitle="Across branches"
+          accentClass="bg-teal-500"
+          Icon={Network}
+        />
+        <StatCard
+          label="Onboarding"
+          value={stats.onboardingActive}
+          subtitle="Active candidates"
           accentClass="bg-amber-500"
-          onClick={() => openFilter("inProgress")}
-          isActive={filter === "inProgress"}
-        />
-        <StatCard
-          label="Post-Onboarding"
-          value={counts.completed}
-          subtitle="Induction done, pending role assignment."
-          accentClass="bg-emerald-500"
-          onClick={() => openFilter("completed")}
-          isActive={filter === "completed"}
+          Icon={UserPlus}
+          onClick={() => openFilter("active")}
+          isActive={filter === "active"}
         />
       </div>
 
@@ -147,6 +126,7 @@ function StatCard({
   value,
   subtitle,
   accentClass,
+  Icon,
   onClick,
   isActive = false,
 }: {
@@ -154,6 +134,7 @@ function StatCard({
   value: number;
   subtitle: string;
   accentClass: string;
+  Icon: ComponentType<SVGProps<SVGSVGElement>>;
   onClick?: () => void;
   isActive?: boolean;
 }) {
@@ -162,6 +143,10 @@ function StatCard({
   const body = (
     <>
       <div className={`absolute top-0 left-0 right-0 h-[3px] ${accentClass}`} aria-hidden="true" />
+      <Icon
+        className="absolute top-3 right-3 w-10 h-10 text-slate-200 pointer-events-none"
+        aria-hidden="true"
+      />
       <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{label}</p>
       <p className="mt-2 text-3xl font-bold text-slate-900 tabular-nums leading-none">{value}</p>
       <p className="mt-1.5 text-[11px] text-slate-500">{subtitle}</p>
@@ -202,30 +187,21 @@ const TYPE_AVATAR_STYLES: Record<EmployeeTypeKey, string> = {
   "fulltime-hq": "bg-rose-100 text-rose-700",
 };
 
-const FILTER_LABEL: Record<Exclude<PanelFilter, null>, string> = {
-  all: "All Active",
-  notStarted: "Pre-Onboarding",
-  inProgress: "In Progress",
-  completed: "Post-Onboarding",
-};
-
 function OnboardingCandidatesPanel({
   rows,
   filter,
   onClose,
 }: {
   rows: CandidatePanelRow[];
-  filter: Exclude<PanelFilter, null>;
+  filter: "active" | "completed";
   onClose: () => void;
 }) {
   const filtered = rows
     .filter((r) => {
       const s = r.status.toLowerCase();
-      if (filter === "notStarted") return s === "sent" || s === "created";
-      if (filter === "inProgress") return s === "in progress";
       if (filter === "completed") return s === "completed";
-      // "all" = full active pipeline
-      return s === "sent" || s === "created" || s === "in progress" || s === "completed";
+      // "active" = sent, created, or in progress
+      return s === "sent" || s === "created" || s === "in progress";
     })
     .slice(0, 50);
 
@@ -238,14 +214,16 @@ function OnboardingCandidatesPanel({
         <div>
           <h2 id="onboarding-panel-heading" className="text-sm font-semibold text-slate-900">
             Onboarding
-            <span className="ml-2 text-[10px] uppercase tracking-wider font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 align-middle">
-              {FILTER_LABEL[filter]}
-            </span>
+            {filter === "completed" && (
+              <span className="ml-2 text-[10px] uppercase tracking-wider font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 align-middle">
+                Completed
+              </span>
+            )}
           </h2>
           <p className="mt-0.5 text-xs text-slate-500">
             {filter === "completed"
               ? "Candidates who have finished induction and need a role assigned."
-              : "Candidates in the onboarding pipeline."}
+              : "Candidates currently in the onboarding pipeline."}
             {filtered.length > 0 && (
               <> · Showing {filtered.length} of {filtered.length === 50 ? "50+" : filtered.length}.</>
             )}
@@ -273,7 +251,7 @@ function OnboardingCandidatesPanel({
         <p className="px-5 py-10 text-center text-sm text-slate-500 italic">
           {filter === "completed"
             ? "No completed candidates waiting for role assignment."
-            : "No candidates match this filter."}
+            : "No candidates currently in the onboarding pipeline."}
         </p>
       ) : (
         <div className="overflow-x-auto">
