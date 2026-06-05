@@ -21,6 +21,8 @@ import type {
 interface Props {
   cases: OffboardingCaseRow[];
   stats: OffboardingStats;
+  /** Logged-in user id — drives the "My Cases" assignment filter. */
+  currentUserId: number;
 }
 
 const STAGE_LABEL: Record<OffboardingStage, string> = {
@@ -50,10 +52,12 @@ function formatLongDate(iso: string | null): string {
   });
 }
 
-export function OffboardingDashboardView({ cases, stats }: Props) {
+export function OffboardingDashboardView({ cases, stats, currentUserId }: Props) {
   const [filter, setFilter] = useState<"all" | "active" | "completed">("all");
+  const [assignment, setAssignment] = useState<"all" | "mine">("all");
 
   const filtered = cases.filter((c) => {
+    if (assignment === "mine" && c.assignedHrId !== currentUserId) return false;
     if (filter === "active") return c.status !== "Completed";
     if (filter === "completed") return c.status === "Completed";
     return true;
@@ -126,6 +130,28 @@ export function OffboardingDashboardView({ cases, stats }: Props) {
           />
         </div>
 
+        {/* ── ASSIGNMENT FILTER (All / My Cases) ── */}
+        <div className="mb-3 inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-xs font-semibold">
+          <button
+            type="button"
+            onClick={() => setAssignment("all")}
+            className={`rounded-md px-3 py-1.5 transition ${
+              assignment === "all" ? "bg-blue-600 text-white" : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            All Cases
+          </button>
+          <button
+            type="button"
+            onClick={() => setAssignment("mine")}
+            className={`rounded-md px-3 py-1.5 transition ${
+              assignment === "mine" ? "bg-blue-600 text-white" : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            My Cases
+          </button>
+        </div>
+
         {/* ── FILTER TABS ── */}
         <div className="mb-4 flex flex-wrap gap-2 border-b border-slate-200 pb-0">
           <TabButton label="All" active={filter === "all"} onClick={() => setFilter("all")} count={cases.length} />
@@ -157,6 +183,8 @@ export function OffboardingDashboardView({ cases, stats }: Props) {
                     <th className="px-3 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Last Day</th>
                     <th className="px-3 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Stage</th>
                     <th className="px-3 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                    <th className="px-3 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">HR Officer</th>
+                    <th className="px-3 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Supervisor</th>
                     <th className="px-3 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider sr-only">View</th>
                   </tr>
                 </thead>
@@ -215,6 +243,8 @@ export function OffboardingDashboardView({ cases, stats }: Props) {
                       <td className="px-3 py-3">
                         <StatusPill status={c.status} />
                       </td>
+                      <td className="px-3 py-3 text-xs text-slate-700 whitespace-nowrap">{c.assignedHrName ?? "—"}</td>
+                      <td className="px-3 py-3 text-xs text-slate-700 whitespace-nowrap">{c.supervisorName ?? "—"}</td>
                       <td className="px-3 py-3 text-right">
                         <Link
                           href={`/dashboards/offboarding/${c.id}`}

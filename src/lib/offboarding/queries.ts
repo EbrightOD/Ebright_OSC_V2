@@ -31,6 +31,10 @@ export interface OffboardingCaseRow {
   lastWorkingDay: string | null;
   /** Days from today until last_working_day (negative if past). null if unset. */
   daysUntilLastDay: number | null;
+  /** Assignment (amendment): HR officer + supervisor. */
+  assignedHrId: number | null;
+  assignedHrName: string | null;
+  supervisorName: string | null;
 }
 
 export interface OffboardingStats {
@@ -76,6 +80,9 @@ export interface OffboardingCaseDetail {
     branchName: string | null;
     position: string | null;
   };
+  // Assignment (amendment): HR officer handling this case. The supervisor is
+  // the `supervisor` field below (reuses supervisor_user_id).
+  assignedHr: { id: number; name: string; email: string } | null;
   // Stage 1 — HR Review
   lastWorkingDay: string | null;
   exitInterviewDate: string | null;
@@ -136,6 +143,8 @@ export async function listOffboardingCases(): Promise<OffboardingCaseRow[]> {
           },
         },
       },
+      assigned_hr: { select: { email: true, user_profile: { select: { full_name: true } } } },
+      supervisor: { select: { email: true, user_profile: { select: { full_name: true } } } },
     },
     orderBy: { created_at: "desc" },
   });
@@ -159,6 +168,11 @@ export async function listOffboardingCases(): Promise<OffboardingCaseRow[]> {
     daysUntilLastDay: r.last_working_day
       ? daysBetween(r.last_working_day, today)
       : null,
+    assignedHrId: r.assigned_hr_id,
+    assignedHrName:
+      r.assigned_hr?.user_profile?.full_name ?? r.assigned_hr?.email ?? null,
+    supervisorName:
+      r.supervisor?.user_profile?.full_name ?? r.supervisor?.email ?? null,
   }));
 }
 
@@ -215,6 +229,9 @@ export async function getOffboardingCaseById(
       supervisor: {
         include: { user_profile: { select: { full_name: true } } },
       },
+      assigned_hr: {
+        include: { user_profile: { select: { full_name: true } } },
+      },
       created_by: {
         include: { user_profile: { select: { full_name: true } } },
       },
@@ -247,6 +264,13 @@ export async function getOffboardingCaseById(
       branchName: employment?.branch?.branch_name ?? null,
       position: employment?.position ?? null,
     },
+    assignedHr: r.assigned_hr
+      ? {
+          id: r.assigned_hr.user_id,
+          name: r.assigned_hr.user_profile?.full_name ?? r.assigned_hr.email,
+          email: r.assigned_hr.email,
+        }
+      : null,
     lastWorkingDay: r.last_working_day
       ? r.last_working_day.toISOString().slice(0, 10)
       : null,

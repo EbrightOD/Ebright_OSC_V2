@@ -193,6 +193,7 @@ model users {
   offboarding_case_supervisor                    offboarding_case[]           @relation("OffboardingCaseSupervisor")
   offboarding_case_created                       offboarding_case[]           @relation("OffboardingCaseCreatedBy")
   offboarding_case_finance_processed             offboarding_case[]           @relation("OffboardingCaseFinanceProcessor")
+  offboarding_case_assigned_hr                   offboarding_case[]           @relation("OffboardingCaseAssignedHR")
   offboarding_checklist_completed                offboarding_checklist_item[]
   offboarding_audit_actor                        offboarding_audit_log[]
   workflow_templates_created                     workflow_template[]          @relation("WorkflowTemplateCreatedBy")
@@ -540,6 +541,9 @@ model offboarding_case {
   finance_processed_by_id Int?
 
   created_by_id Int
+  // Assignment (amendment): the HR officer handling this case. The supervisor
+  // assignment reuses the existing supervisor_user_id column above.
+  assigned_hr_id Int?
   created_at    DateTime  @default(now()) @db.Timestamptz(6)
   updated_at    DateTime  @updatedAt @db.Timestamptz(6)
   completed_at  DateTime? @db.Timestamptz(6)
@@ -548,6 +552,7 @@ model offboarding_case {
   supervisor           users?                       @relation("OffboardingCaseSupervisor", fields: [supervisor_user_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction, map: "fk_offboarding_case_supervisor")
   created_by           users                        @relation("OffboardingCaseCreatedBy", fields: [created_by_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_offboarding_case_creator")
   finance_processed_by users?                       @relation("OffboardingCaseFinanceProcessor", fields: [finance_processed_by_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction, map: "fk_offboarding_case_finance")
+  assigned_hr          users?                       @relation("OffboardingCaseAssignedHR", fields: [assigned_hr_id], references: [user_id], onDelete: SetNull, onUpdate: NoAction, map: "fk_offboarding_case_assigned_hr")
   checklist_items      offboarding_checklist_item[]
   audit_log            offboarding_audit_log[]
 

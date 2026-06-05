@@ -34,7 +34,7 @@ export default async function OffboardingDashboardPage() {
 
   const actor = await prisma.users.findUnique({
     where: { email: session.user.email },
-    select: { role: { select: { role_type: true } } },
+    select: { user_id: true, role: { select: { role_type: true } } },
   });
   const roleType = (actor?.role?.role_type ?? "").toLowerCase();
   if (!ALLOWED_ROLES.has(roleType)) {
@@ -52,7 +52,11 @@ export default async function OffboardingDashboardPage() {
       role={actor?.role?.role_type ?? ""}
       name={session.user.name ?? null}
     >
-      <OffboardingDashboardView cases={cases} stats={stats} />
+      <OffboardingDashboardView
+        cases={cases}
+        stats={stats}
+        currentUserId={actor?.user_id ?? 0}
+      />
     </AppShell>
   );
 }

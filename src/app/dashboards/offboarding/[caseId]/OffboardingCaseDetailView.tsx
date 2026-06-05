@@ -154,6 +154,23 @@ export function OffboardingCaseDetailView({ detail }: Props) {
           </div>
         </section>
 
+        {/* ── ASSIGNMENT (amendment) — read-only, set at case creation ── */}
+        <section className="bg-white border border-slate-200 rounded-2xl p-5 mb-5">
+          <h2 className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-3">
+            Assignment
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">HR Officer</p>
+              <p className="mt-1 text-sm font-medium text-slate-900">{detail.assignedHr?.name ?? "—"}</p>
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Supervisor</p>
+              <p className="mt-1 text-sm font-medium text-slate-900">{detail.supervisor?.name ?? "—"}</p>
+            </div>
+          </div>
+        </section>
+
         {/* ── PROGRESS STEPPER ── */}
         <section className="bg-white border border-slate-200 rounded-2xl p-5 mb-5">
           <ol className="flex items-start justify-between gap-2" aria-label="Offboarding progress">
