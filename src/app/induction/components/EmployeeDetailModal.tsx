@@ -97,9 +97,17 @@ export default function EmployeeDetailModal({ userId, fallbackName, onClose }: P
   >({ kind: "loading" });
   const [lightboxStepId, setLightboxStepId] = useState<number | null>(null);
 
+  // Reset to the loading state when the target user changes — done during
+  // render (React's "adjust state on prop change" pattern) rather than a
+  // synchronous setState inside the effect below.
+  const [trackedUserId, setTrackedUserId] = useState(userId);
+  if (trackedUserId !== userId) {
+    setTrackedUserId(userId);
+    setState({ kind: "loading" });
+  }
+
   useEffect(() => {
     let cancelled = false;
-    setState({ kind: "loading" });
     fetchInductionForManager(userId).then((res: FetchInductionForManagerResult) => {
       if (cancelled) return;
       if (res.ok) setState({ kind: "loaded", data: res.data });
