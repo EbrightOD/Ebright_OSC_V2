@@ -185,12 +185,10 @@ export default function EmployeeListView({
     const q = search.trim().toLowerCase();
     return employees.filter((e) => {
       if (role && e.role !== role) return false;
-      if (status) {
-        if (e.status !== status) return false;
-      } else if (e.status === "archive") {
-        // Hide archived ('do not hire') employees unless explicitly filtered for.
-        return false;
-      }
+      // Default load applies no implicit status filter — the list is already
+      // scoped to active staff (same source as the Total Staff box). Status is
+      // only narrowed when the Status dropdown is explicitly set.
+      if (status && e.status !== status) return false;
       if (orgUnit.startsWith("branch:")) {
         const code = orgUnit.slice("branch:".length);
         if (e.branchCode !== code) return false;
