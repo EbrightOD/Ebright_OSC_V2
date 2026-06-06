@@ -9,8 +9,6 @@ export const STATUS_OPTIONS = ["active", "onboarding", "inactive", "archive"] as
 export type StatusOption = (typeof STATUS_OPTIONS)[number];
 
 export const STAFF_ROLE_ID = 4;
-// Roles that appear in the Employees list (role_id values from the `role` table).
-export const EMPLOYEE_LIST_ROLE_IDS = [2, 4];
 
 export interface EmployeeRow {
   id: number;
@@ -87,9 +85,12 @@ export async function listEmployees(filters: ListFilters = {}): Promise<Employee
   if (filters.role) employmentWhere.position = filters.role;
   if (filters.status) employmentWhere.status = filters.status;
 
+  // Same source as the "Total Staff" count on the dashboard
+  // (prisma.users.count({ where: { status: "active" } })) so the list and the
+  // box stay aligned. Previously this was restricted to role_id IN [2,4],
+  // which collapsed the list down to a handful of accounts.
   const whereUser: Record<string, unknown> = {
-    role_id: { in: EMPLOYEE_LIST_ROLE_IDS },
-    NOT: { status: "pending" },
+    status: "active",
   };
 
   if (Object.keys(employmentWhere).length > 0) {
