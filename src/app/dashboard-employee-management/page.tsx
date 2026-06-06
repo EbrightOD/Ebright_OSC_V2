@@ -22,6 +22,7 @@ export default async function EmployeeManagementPage() {
     departmentCount,
     onboardingActive,
     onboardingCompleted,
+    onboardingUserIds,
   ] = await Promise.all([
     listEmployees(),
     listBranches(),
@@ -38,6 +39,7 @@ export default async function EmployeeManagementPage() {
     prisma.induction_profile.count({
       where: { induction_type: "Onboarding", status: "Completed" },
     }),
+    onboardingScheduleUserIds(),
   ]);
 
   const stats: OverviewStats = {
@@ -59,7 +61,38 @@ export default async function EmployeeManagementPage() {
         branches={branches}
         departments={departments}
         overviewStats={stats}
+        onboardingUserIds={onboardingUserIds}
       />
     </AppShell>
   );
+}
+
+/**
+ * "Burnlist" set for the Onboarding box click-filter: the user_ids that appear
+ * in a Finalized manpower_schedule whose start_date falls between one week ago
+ * and six months out. Same logic as the Burnlist.
+ *
+ * Used ONLY to filter the employee list when the Onboarding card is clicked.
+ * The Onboarding box COUNT is a separate metric (induction_profile) and is left
+ * untouched.
+ */
+async function onboardingScheduleUserIds(): Promise<number[]> {
+  const now = new Date();
+  const today = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
+  const weekAgo = new Date(today);
+  weekAgo.setUTCDate(weekAgo.getUTCDate() - 7);
+  const sixMonths = new Date(today);
+  sixMonths.setUTCMonth(sixMonths.getUTCMonth() + 6);
+
+  const rows = await prisma.manpower_schedule.findMany({
+    where: {
+      status: "Finalized",
+      start_date: { gte: weekAgo, lte: sixMonths },
+    },
+    select: { user_id: true },
+    distinct: ["user_id"],
+  });
+  return rows.map((r) => r.user_id);
 }

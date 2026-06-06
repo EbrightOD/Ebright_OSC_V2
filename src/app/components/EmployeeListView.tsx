@@ -110,6 +110,7 @@ export default function EmployeeListView({
   branches,
   departments,
   overviewStats,
+  onboardingUserIds,
 }: {
   employees: EmployeeRow[];
   branches: BranchOpt[];
@@ -117,6 +118,9 @@ export default function EmployeeListView({
   /** Optional — when provided, renders the org overview cards above the
    *  existing employees table. The cards act as quick-filters for the list. */
   overviewStats?: OverviewStats;
+  /** user_ids on the "burnlist" (Finalized manpower_schedule, start_date within
+   *  -1 week .. +6 months). Drives the Onboarding card click-filter. */
+  onboardingUserIds?: number[];
 }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -172,6 +176,11 @@ export default function EmployeeListView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deleteTarget, isDeleting]);
 
+  const onboardingIdSet = useMemo(
+    () => new Set(onboardingUserIds ?? []),
+    [onboardingUserIds],
+  );
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return employees.filter((e) => {
@@ -195,7 +204,9 @@ export default function EmployeeListView({
       } else if (activeBox === "departments") {
         if (e.branchCode !== "HQ") return false;
       } else if (activeBox === "onboarding") {
-        if (e.status !== "onboarding") return false;
+        // "Burnlist": staff with a Finalized manpower_schedule starting within
+        // the -1 week .. +6 months window (set computed server-side).
+        if (!onboardingIdSet.has(e.id)) return false;
       }
       if (!q) return true;
       return (
@@ -205,7 +216,7 @@ export default function EmployeeListView({
         e.email.toLowerCase().includes(q)
       );
     });
-  }, [employees, search, orgUnit, role, status, activeBox]);
+  }, [employees, search, orgUnit, role, status, activeBox, onboardingIdSet]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
