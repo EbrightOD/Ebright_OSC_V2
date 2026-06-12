@@ -22,17 +22,13 @@ interface NavItem {
   name: string;
   href: string;
   Icon: IconComponent;
+  /** Optional image used in place of the lucide Icon (e.g. a product logo). */
+  iconSrc?: string;
   external?: boolean;
 }
 
 const primaryNav: NavItem[] = [
   { name: "Home", href: "/home", Icon: Home },
-  {
-    name: "Library",
-    href: "https://library.ebright.my/",
-    Icon: Library,
-    external: true,
-  },
   {
     name: "Internal Dashboard",
     href: "https://dashboard.ebright.my",
@@ -54,6 +50,13 @@ const primaryNav: NavItem[] = [
 const secondaryNav: NavItem[] = [
   { name: "Attendance", href: "/attendance", Icon: CalendarCheck },
   { name: "Account Management", href: "/account-management", Icon: ShieldCheck },
+  {
+    name: "Library",
+    href: "https://library.ebright.my/",
+    Icon: Library,
+    iconSrc: "/library-icon.png",
+    external: true,
+  },
 ];
 
 interface SidebarProps {
@@ -77,9 +80,11 @@ export default function Sidebar({ collapsed }: SidebarProps) {
         }`}
       >
         {collapsed ? (
-          <span className="w-9 h-9 rounded-md bg-red-600 text-white font-bold text-lg flex items-center justify-center shrink-0">
-            e
-          </span>
+          <img
+            src="/ebright-mark.png"
+            alt="Ebright"
+            className="w-12 h-12 object-contain shrink-0"
+          />
         ) : (
           <img
             src="/ebright-logo.png"
@@ -117,7 +122,7 @@ function NavSection({
         </p>
       )}
       <ul className="space-y-1">
-        {items.map(({ name, href, Icon, external }) => {
+        {items.map(({ name, href, Icon, iconSrc, external }) => {
           const isActive =
             !external &&
             (pathname === href || pathname?.startsWith(href + "/"));
@@ -136,10 +141,21 @@ function NavSection({
                   aria-hidden="true"
                 />
               )}
-              <Icon
-                className={`w-5 h-5 shrink-0 ${isActive ? "text-blue-600" : "text-slate-500"}`}
-                aria-hidden="true"
-              />
+              {iconSrc ? (
+                <img
+                  src={iconSrc}
+                  alt=""
+                  className={`shrink-0 rounded-[3px] object-contain ${
+                    collapsed ? "w-8 h-8" : "w-5 h-5"
+                  }`}
+                  aria-hidden="true"
+                />
+              ) : (
+                <Icon
+                  className={`w-5 h-5 shrink-0 ${isActive ? "text-blue-600" : "text-slate-500"}`}
+                  aria-hidden="true"
+                />
+              )}
               {!collapsed && <span className="whitespace-nowrap">{name}</span>}
             </>
           );

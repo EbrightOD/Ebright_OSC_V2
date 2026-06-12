@@ -11,6 +11,7 @@ import AttendanceSummaryView, {
 } from "@/app/components/AttendanceSummaryView";
 import { ShieldAlert } from "lucide-react";
 import { mytDateOnly, mytDayUtcBounds, mytHour } from "@/lib/myt";
+import { STAFF_ROLE_ID } from "@/lib/employeeQueries";
 
 export const dynamic = "force-dynamic";
 
@@ -117,14 +118,14 @@ export default async function AttendanceSummaryPage({ searchParams }: PageProps)
     : null;
   const isAllBranches = selectedBranch === null;
 
-  // Active employees in scope: role_id = 4 (staff) only, with at least one
+  // Active employees in scope: staff only, with at least one
   // employment row that has a non-null employee_id (and matches the selected
   // branch when one is chosen).
   const employees = await prisma.users.findMany({
     where: {
       status: "active",
       deleted_at: null,
-      role_id: 4,
+      role_id: STAFF_ROLE_ID,
       employment: selectedBranch
         ? {
             some: {
@@ -275,7 +276,7 @@ export default async function AttendanceSummaryPage({ searchParams }: PageProps)
         where: {
           user_id: { in: visitorIds },
           status: "active",
-          role_id: 4,
+          role_id: STAFF_ROLE_ID,
         },
         select: {
           user_id: true,

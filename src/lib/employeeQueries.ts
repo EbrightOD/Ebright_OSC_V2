@@ -8,7 +8,9 @@ export type RoleOption = (typeof ROLE_OPTIONS)[number];
 export const STATUS_OPTIONS = ["active", "onboarding", "inactive", "archive"] as const;
 export type StatusOption = (typeof STATUS_OPTIONS)[number];
 
-export const STAFF_ROLE_ID = 4;
+// role_id values from the `role` table: 1 superadmin, 2 ceo, 3 department,
+// 4 branch, 5 regional manager, 6 staff.
+export const STAFF_ROLE_ID = 6;
 
 export interface EmployeeRow {
   id: number;

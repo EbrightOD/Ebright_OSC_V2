@@ -25,7 +25,7 @@ function createClient() {
   //                               is replaced rather than reused.
   //   keepAlive                 — keep TCP alive against idle middleboxes.
   const adapter = new PrismaPg({
-    connectionString: process.env.DATABASE_URL,
+    connectionString: process.env.HRFS_DATABASE_URL ?? process.env.DATABASE_URL,
     options:
       "-c TimeZone=UTC " +
       "-c statement_timeout=60000 " +

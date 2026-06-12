@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Sidebar from "./Sidebar";
 import TopBar from "./TopBar";
+
+const SIDEBAR_STORAGE_KEY = "sidebar-collapsed";
 
 interface AppShellProps {
   children: ReactNode;
@@ -12,7 +14,16 @@ interface AppShellProps {
 }
 
 export default function AppShell({ children, email, role, name }: AppShellProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  // Lazily read the persisted choice so it survives navigation between pages
+  // (AppShell is mounted per-page, so it would otherwise reset on every nav).
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(SIDEBAR_STORAGE_KEY) === "true";
+  });
+
+  useEffect(() => {
+    window.localStorage.setItem(SIDEBAR_STORAGE_KEY, String(collapsed));
+  }, [collapsed]);
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">

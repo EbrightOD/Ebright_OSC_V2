@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import GreetingHeader from "./GreetingHeader";
 
 interface HrPersonalizedDashboardProps {
   userName?: string | null;
@@ -499,21 +499,10 @@ export default function HrPersonalizedDashboard({
   userName,
   userEmail,
 }: HrPersonalizedDashboardProps) {
-  const today = useMemo(() => {
-    const d = new Date();
-    return d.toLocaleDateString("en-GB", {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-  }, []);
-
   const greetName =
     userName?.split(" ")[0] ||
     userEmail?.split("@")[0] ||
     "";
-  const positionLine = "Human Resources";
 
   const maxPipeline = Math.max(...pipeline.map((p) => p.count));
 
@@ -535,30 +524,7 @@ export default function HrPersonalizedDashboard({
         }}
       >
         {/* Greeting header */}
-        <header style={{ padding: "8px 0 4px" }}>
-          <h1
-            style={{
-              fontSize: 32,
-              fontWeight: 600,
-              color: "#0F172A",
-              letterSpacing: "-0.02em",
-              margin: 0,
-              lineHeight: 1.15,
-            }}
-          >
-            Welcome{greetName ? `, ${greetName}` : ""}{" "}
-            <span style={{ display: "inline-block" }}>👋</span>
-          </h1>
-          <p
-            style={{
-              marginTop: 6,
-              fontSize: 13,
-              color: "#6B7280",
-            }}
-          >
-            {today} · {positionLine}
-          </p>
-        </header>
+        <GreetingHeader name={greetName} style={{ padding: "8px 0 4px" }} />
 
         {/* Section 2: Metric cards */}
         <section

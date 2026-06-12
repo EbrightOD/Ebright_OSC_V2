@@ -14,8 +14,8 @@ import AttendanceReportView, {
 
 export const dynamic = "force-dynamic";
 
-// Only role_id 4 (staff) appears on the attendance report.
-const STAFF_ROLE_ID = 4;
+// Only staff (role_id 6) appears on the attendance report.
+const STAFF_ROLE_ID = 6;
 
 // Company convention: Sunday and Monday are off days
 const WEEKEND_DAY_NUMBERS = new Set([0, 1]);

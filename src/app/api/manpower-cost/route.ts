@@ -119,9 +119,9 @@ function dayNameToDate(dayName: string, startDateISO: string): string {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-// role_id 4 = staff. Combined with a coach position this triggers the
+// role_id 6 = staff. Combined with a coach position this triggers the
 // employee-only view (the user can only see their own row).
-const STAFF_ROLE_ID = 4;
+const STAFF_ROLE_ID = 6;
 const COACH_POSITION_PATTERNS = [
   /^PT(\s|-|$)/,
   /^FT(\s|-|$)/,
@@ -356,7 +356,7 @@ export async function GET(req: Request) {
       return a.name.localeCompare(b.name);
     });
 
-    // For employee accounts (role_id 4 + coach position), keep ONLY their own
+    // For employee accounts (role_id 6 + coach position), keep ONLY their own
     // row. Match against full_name OR nick_name (lowercased). Fail closed: if
     // we can't identify them, return an empty list rather than the full set.
     let visibleResults = allResults;
