@@ -8,6 +8,7 @@ export default function NotificationBell({ role }: { role?: string }) {
   const isSuperadmin = role === "superadmin";
   const [open, setOpen] = useState(false);
   const [count, setCount] = useState(0);
+  const [leaveCount, setLeaveCount] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -32,6 +33,26 @@ export default function NotificationBell({ role }: { role?: string }) {
   }, [isSuperadmin]);
 
   useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch("/api/leave/approvals/count", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = (await res.json()) as { count?: number };
+        if (!cancelled && typeof data.count === "number") setLeaveCount(data.count);
+      } catch {
+        // network flake — no-op
+      }
+    };
+    load();
+    const interval = setInterval(load, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!open) return;
     const onClick = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
@@ -47,6 +68,16 @@ export default function NotificationBell({ role }: { role?: string }) {
     };
   }, [open]);
 
+  const totalCount = count + leaveCount;
+  const leaveMessage =
+    role === "hr"
+      ? leaveCount === 1
+        ? "1 leave request was recently approved."
+        : `${leaveCount} leave requests were recently approved.`
+      : leaveCount === 1
+        ? "1 leave request is awaiting your review."
+        : `${leaveCount} leave requests are awaiting your review.`;
+
   return (
     <div className="relative" ref={containerRef}>
       <button
@@ -54,7 +85,7 @@ export default function NotificationBell({ role }: { role?: string }) {
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label={count > 0 ? `Notifications: ${count} pending` : "Notifications"}
+        aria-label={totalCount > 0 ? `Notifications: ${totalCount} pending` : "Notifications"}
         className={`relative inline-flex items-center justify-center w-10 h-10 rounded-full transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
           open ? "bg-slate-100" : "hover:bg-slate-100"
         }`}
@@ -62,7 +93,7 @@ export default function NotificationBell({ role }: { role?: string }) {
       >
         <span className="relative inline-flex">
           <Bell className="w-6 h-6" fill="currentColor" strokeWidth={1.5} aria-hidden="true" />
-          {count > 0 && (
+          {totalCount > 0 && (
             <span
               aria-hidden="true"
               style={{
@@ -85,7 +116,7 @@ export default function NotificationBell({ role }: { role?: string }) {
                 pointerEvents: "none",
               }}
             >
-              {count > 99 ? "99+" : count}
+              {totalCount > 99 ? "99+" : totalCount}
             </span>
           )}
         </span>
@@ -96,68 +127,79 @@ export default function NotificationBell({ role }: { role?: string }) {
           role="menu"
           className="absolute right-0 mt-2 w-[22rem] bg-white rounded-xl shadow-xl border border-slate-200 z-50 overflow-hidden"
         >
-          {!isSuperadmin || count === 0 ? (
-            <>
-              <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-slate-900">Notifications</h3>
-                <button
-                  type="button"
-                  onClick={() => setOpen(false)}
-                  aria-label="Close notifications"
-                  className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
-                >
-                  <X className="w-4 h-4" aria-hidden="true" />
-                </button>
+          <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-900">Notifications</h3>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Close notifications"
+              className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+            >
+              <X className="w-4 h-4" aria-hidden="true" />
+            </button>
+          </div>
+
+          {totalCount === 0 ? (
+            <div className="px-5 py-10 text-center">
+              <div className="mx-auto w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
+                <Bell className="w-5 h-5 text-slate-400" aria-hidden="true" />
               </div>
-              <div className="px-5 py-10 text-center">
-                <div className="mx-auto w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
-                  <Bell className="w-5 h-5 text-slate-400" aria-hidden="true" />
-                </div>
-                <p className="mt-3 text-sm font-medium text-slate-900">You&apos;re all caught up</p>
-                <p className="mt-0.5 text-xs text-slate-500">New notifications will show up here.</p>
-              </div>
-            </>
+              <p className="mt-3 text-sm font-medium text-slate-900">You&apos;re all caught up</p>
+              <p className="mt-0.5 text-xs text-slate-500">New notifications will show up here.</p>
+            </div>
           ) : (
-            <div className="p-4">
-              <div className="flex items-start gap-3">
-                <span className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center shrink-0 ring-1 ring-inset ring-amber-200">
-                  <Hourglass className="w-5 h-5 text-amber-600" aria-hidden="true" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm font-semibold text-slate-900 leading-snug">Account approval</p>
-                    <button
-                      type="button"
-                      onClick={() => setOpen(false)}
-                      aria-label="Dismiss"
-                      className="shrink-0 -mt-0.5 -mr-1 p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
-                    >
-                      <X className="w-4 h-4" aria-hidden="true" />
-                    </button>
-                  </div>
-                  <p className="mt-0.5 text-sm text-slate-500 leading-snug">
-                    {count === 1
-                      ? "1 registration is waiting for your approval."
-                      : `${count} registrations are waiting for your approval.`}
-                  </p>
-                  <div className="mt-3 flex items-center gap-2">
-                    <Link
-                      href="/approvals"
-                      onClick={() => setOpen(false)}
-                      className="inline-flex items-center justify-center h-9 px-4 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 shadow-sm"
-                    >
-                      Review
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={() => setOpen(false)}
-                      className="inline-flex items-center justify-center h-9 px-4 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                    >
-                      Dismiss
-                    </button>
+            <div className="divide-y divide-slate-100">
+              {isSuperadmin && count > 0 && (
+                <div className="p-4">
+                  <div className="flex items-start gap-3">
+                    <span className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center shrink-0 ring-1 ring-inset ring-amber-200">
+                      <Hourglass className="w-5 h-5 text-amber-600" aria-hidden="true" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-slate-900 leading-snug">Account approval</p>
+                      <p className="mt-0.5 text-sm text-slate-500 leading-snug">
+                        {count === 1
+                          ? "1 registration is waiting for your approval."
+                          : `${count} registrations are waiting for your approval.`}
+                      </p>
+                      <div className="mt-3">
+                        <Link
+                          href="/approvals"
+                          onClick={() => setOpen(false)}
+                          className="inline-flex items-center justify-center h-9 px-4 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors shadow-sm"
+                        >
+                          Review
+                        </Link>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
+
+              {leaveCount > 0 && (
+                <div className="p-4">
+                  <div className="flex items-start gap-3">
+                    <span className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center shrink-0 ring-1 ring-inset ring-amber-200">
+                      <Hourglass className="w-5 h-5 text-amber-600" aria-hidden="true" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-slate-900 leading-snug">
+                        {role === "hr" ? "Approved leave" : "Leave approvals"}
+                      </p>
+                      <p className="mt-0.5 text-sm text-slate-500 leading-snug">{leaveMessage}</p>
+                      <div className="mt-3">
+                        <Link
+                          href="/attendance/leave/approvals"
+                          onClick={() => setOpen(false)}
+                          className="inline-flex items-center justify-center h-9 px-4 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors shadow-sm"
+                        >
+                          Review
+                        </Link>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
