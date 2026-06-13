@@ -6,6 +6,8 @@ import { authOptions } from "@/lib/nextauth";
 import { prisma } from "@/lib/prisma";
 import { uploadToDrive } from "@/lib/drive";
 import path from "node:path";
+import { resolveHodAction, validateRejectionReason } from "./approval-logic";
+import { getActiveDepartmentId } from "./approval-queries";
 
 const ALLOWED_EXTS = new Set([".pdf", ".jpg", ".jpeg", ".png"]);
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
@@ -112,4 +114,96 @@ export async function submitLeaveRequest(
     leaveId: created.leave_id,
     totalDays: Number(created.total_days),
   };
+}
+
+export interface ApprovalActionResult {
+  ok: boolean;
+  error?: string;
+}
+
+/** Resolve the acting user + role + active department from the session. */
+async function resolveActor(): Promise<
+  | { ok: true; userId: number; role: string | null; departmentId: number | null }
+  | { ok: false; error: string }
+> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) return { ok: false, error: "Not authenticated." };
+  const role = (session.user as { role?: string | null }).role ?? null;
+  const user = await prisma.users.findUnique({
+    where: { email: session.user.email },
+    select: { user_id: true },
+  });
+  if (!user) return { ok: false, error: "User record not found." };
+  const departmentId = await getActiveDepartmentId(user.user_id);
+  return { ok: true, userId: user.user_id, role, departmentId };
+}
+
+async function loadRequestForAction(leaveId: number) {
+  const req = await prisma.leave_request.findUnique({
+    where: { leave_id: leaveId },
+    select: { leave_id: true, status: true, user_id: true },
+  });
+  if (!req) return null;
+  const requesterDepartmentId = await getActiveDepartmentId(req.user_id);
+  return { ...req, requesterDepartmentId };
+}
+
+export async function approveLeaveRequest(leaveId: number): Promise<ApprovalActionResult> {
+  const actor = await resolveActor();
+  if (!actor.ok) return { ok: false, error: actor.error };
+
+  const req = await loadRequestForAction(leaveId);
+  if (!req) return { ok: false, error: "Leave request not found." };
+
+  const decision = resolveHodAction({
+    actorRole: actor.role,
+    actorDepartmentId: actor.departmentId,
+    requestStatus: req.status,
+    requesterDepartmentId: req.requesterDepartmentId,
+  });
+  if (!decision.ok) return { ok: false, error: decision.error };
+
+  const now = new Date();
+  await prisma.leave_request.update({
+    where: { leave_id: leaveId },
+    data: { status: "approved", approved_by: actor.userId, approved_at: now, updated_at: now },
+  });
+  revalidatePath("/attendance/leave/approvals");
+  return { ok: true };
+}
+
+export async function rejectLeaveRequest(
+  leaveId: number,
+  reason: string,
+): Promise<ApprovalActionResult> {
+  const actor = await resolveActor();
+  if (!actor.ok) return { ok: false, error: actor.error };
+
+  const reasonCheck = validateRejectionReason(reason);
+  if (!reasonCheck.ok) return { ok: false, error: reasonCheck.error };
+
+  const req = await loadRequestForAction(leaveId);
+  if (!req) return { ok: false, error: "Leave request not found." };
+
+  const decision = resolveHodAction({
+    actorRole: actor.role,
+    actorDepartmentId: actor.departmentId,
+    requestStatus: req.status,
+    requesterDepartmentId: req.requesterDepartmentId,
+  });
+  if (!decision.ok) return { ok: false, error: decision.error };
+
+  const now = new Date();
+  await prisma.leave_request.update({
+    where: { leave_id: leaveId },
+    data: {
+      status: "rejected",
+      remarks: reasonCheck.reason,
+      approved_by: actor.userId,
+      approved_at: now,
+      updated_at: now,
+    },
+  });
+  revalidatePath("/attendance/leave/approvals");
+  return { ok: true };
 }
