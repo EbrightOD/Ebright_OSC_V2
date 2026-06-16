@@ -196,7 +196,8 @@ export default function LeaveRequestsView({
         </header>
 
         {canApprove && (
-          <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1 text-sm font-medium">
+          <div className="flex justify-end">
+            <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1 text-sm font-medium">
             <button
               type="button"
               onClick={() => setTab("mine")}
@@ -215,6 +216,7 @@ export default function LeaveRequestsView({
             >
               To Approve{approvalItems.length > 0 ? ` (${approvalItems.length})` : ""}
             </button>
+            </div>
           </div>
         )}
 
