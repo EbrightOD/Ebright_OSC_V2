@@ -10,6 +10,7 @@ import {
   Umbrella,
   Inbox,
   Eye,
+  Hourglass,
 } from "lucide-react";
 import HodApprovalTable, { type HodApprovalItem } from "@/app/components/HodApprovalTable";
 
@@ -217,6 +218,24 @@ export default function LeaveRequestsView({
               To Approve{approvalItems.length > 0 ? ` (${approvalItems.length})` : ""}
             </button>
             </div>
+          </div>
+        )}
+
+        {canApprove && approvalItems.length > 0 && tab !== "approve" && (
+          <div className="flex items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <Hourglass className="w-4 h-4 shrink-0 text-amber-600" aria-hidden="true" />
+            <span className="flex-1">
+              {approvalItems.length === 1
+                ? "There is 1 pending leave request awaiting your approval."
+                : `There are ${approvalItems.length} pending leave requests awaiting your approval.`}
+            </span>
+            <button
+              type="button"
+              onClick={() => setTab("approve")}
+              className="shrink-0 inline-flex items-center justify-center rounded-lg bg-amber-600 text-white px-3 py-1.5 text-xs font-semibold hover:bg-amber-700 transition-colors"
+            >
+              Review
+            </button>
           </div>
         )}
 
