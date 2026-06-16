@@ -65,6 +65,55 @@ function RecordsDonut({ counts, total }: { counts: Record<string, number>; total
   );
 }
 
+function formatMonth(ym: string): string {
+  const d = new Date(ym + "-01T00:00:00");
+  return `${d.toLocaleString("en-US", { month: "short" })} '${ym.slice(2, 4)}`;
+}
+
+interface MonthStat {
+  month: string;
+  count: number;
+  label: string;
+}
+
+/** Simple dependency-free bar chart of leave requests per month. */
+function LeaveStatsBar({ stats, maxCount }: { stats: MonthStat[]; maxCount: number }) {
+  if (stats.length === 0) {
+    return <p className="text-sm text-slate-400">No data to chart.</p>;
+  }
+  return (
+    <div>
+      <div className="flex items-end gap-2">
+        {stats.map((s) => (
+          <div
+            key={s.month}
+            className="flex-1 flex flex-col items-center justify-end gap-1"
+            title={`${s.label}: ${s.count}`}
+          >
+            <span className="text-[10px] font-medium text-slate-500">{s.count}</span>
+            <div
+              className="w-full rounded-t"
+              style={{
+                height: `${(s.count / maxCount) * 150}px`,
+                maxWidth: "32px",
+                minHeight: s.count > 0 ? "4px" : "0px",
+                backgroundColor: "#10B981",
+              }}
+            />
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2 mt-2 border-t border-slate-100 pt-2">
+        {stats.map((s) => (
+          <span key={s.month} className="flex-1 text-center text-[10px] text-slate-400">
+            {s.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function LeaveRecordsView({
   scopeLabel,
   rows = [],
@@ -76,6 +125,18 @@ export default function LeaveRecordsView({
   for (const r of rows) {
     if (r.status in counts) counts[r.status] += 1;
   }
+
+  // Leave volume per month (by start date), most recent 12 months with data.
+  const byMonth = new Map<string, number>();
+  for (const r of rows) {
+    const m = r.startDate.slice(0, 7);
+    byMonth.set(m, (byMonth.get(m) ?? 0) + 1);
+  }
+  const stats: MonthStat[] = Array.from(byMonth.keys())
+    .sort()
+    .slice(-12)
+    .map((m) => ({ month: m, count: byMonth.get(m) ?? 0, label: formatMonth(m) }));
+  const maxCount = stats.reduce((mx, s) => Math.max(mx, s.count), 1);
 
   return (
     <div className="min-h-full bg-slate-50">
@@ -102,27 +163,40 @@ export default function LeaveRecordsView({
         </header>
 
         {rows.length > 0 && (
-          <section
-            className="bg-white border border-slate-200 rounded-2xl px-6 py-5 flex items-center gap-6"
-            style={{ maxWidth: "460px" }}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "minmax(300px, 420px) 1fr",
+              gap: "1rem",
+            }}
           >
-            <RecordsDonut counts={counts} total={rows.length} />
-            <ul className="space-y-2 min-w-0 flex-1">
-              {DONUT_ORDER.map((k) => (
-                <li key={k} className="flex items-center gap-2 text-sm">
-                  <span
-                    className="w-2.5 h-2.5 rounded-full shrink-0"
-                    style={{ backgroundColor: STATUS_STYLE[k].dot }}
-                    aria-hidden="true"
-                  />
-                  <span className="text-slate-600">{STATUS_STYLE[k].label}</span>
-                  <span className="ml-auto font-semibold text-slate-900 tabular-nums">
-                    {counts[k] ?? 0}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </section>
+            {/* Status donut */}
+            <section className="bg-white border border-slate-200 rounded-2xl px-6 py-5 flex items-center gap-6">
+              <RecordsDonut counts={counts} total={rows.length} />
+              <ul className="space-y-2 min-w-0 flex-1">
+                {DONUT_ORDER.map((k) => (
+                  <li key={k} className="flex items-center gap-2 text-sm">
+                    <span
+                      className="w-2.5 h-2.5 rounded-full shrink-0"
+                      style={{ backgroundColor: STATUS_STYLE[k].dot }}
+                      aria-hidden="true"
+                    />
+                    <span className="text-slate-600">{STATUS_STYLE[k].label}</span>
+                    <span className="ml-auto font-semibold text-slate-900 tabular-nums">
+                      {counts[k] ?? 0}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            {/* Leave statistics (monthly trend) */}
+            <section className="bg-white border border-slate-200 rounded-2xl px-6 py-5">
+              <h2 className="text-sm font-semibold text-slate-900">Leave Statistics</h2>
+              <p className="text-xs text-slate-500 mb-4">Leave requests by month</p>
+              <LeaveStatsBar stats={stats} maxCount={maxCount} />
+            </section>
+          </div>
         )}
 
         {rows.length === 0 ? (
