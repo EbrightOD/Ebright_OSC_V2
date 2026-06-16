@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import DashboardHome from "@/app/components/DashboardHome";
 import EmployeeSelfServiceDashboard from "@/app/components/EmployeeSelfServiceDashboard";
 import AppShell from "@/app/components/AppShell";
+import HodPendingAlert from "@/app/components/HodPendingAlert";
 
 export default function HomePage() {
   const { data: session, status } = useSession({
@@ -24,6 +25,7 @@ export default function HomePage() {
 
   const userEmail = session?.user?.email || "";
   const userRole = (session?.user as { role?: string } | undefined)?.role || "USER";
+  const userPosition = (session?.user as { position?: string } | undefined)?.position ?? "";
   const userName = session?.user?.name ?? null;
 
   // role_type "staff" corresponds to role_id = 4 in the DB.
@@ -31,6 +33,7 @@ export default function HomePage() {
 
   return (
     <AppShell email={userEmail} role={userRole} name={userName}>
+      <HodPendingAlert position={userPosition} />
       {isStaff ? (
         <EmployeeSelfServiceDashboard userName={userName} userEmail={userEmail} />
       ) : (
