@@ -79,7 +79,13 @@ export async function submitLeaveRequest(
     return { ok: false, error: "End date cannot be before start date." };
   }
 
-  const totalDays = daysInclusive(startDate, endDate);
+  // Half day is only valid for a single-day request (start and end on the same day).
+  const halfDay = s(formData, "half_day") === "1";
+  if (halfDay && startStr !== endStr) {
+    return { ok: false, error: "Half day is only allowed for a single-day request." };
+  }
+
+  const totalDays = halfDay ? 0.5 : daysInclusive(startDate, endDate);
 
   const reason = s(formData, "reason") || null;
 
@@ -121,21 +127,21 @@ export interface ApprovalActionResult {
   error?: string;
 }
 
-/** Resolve the acting user + role + active department from the session. */
+/** Resolve the acting user + position + active department from the session. */
 async function resolveActor(): Promise<
-  | { ok: true; userId: number; role: string | null; departmentId: number | null }
+  | { ok: true; userId: number; position: string | null; departmentId: number | null }
   | { ok: false; error: string }
 > {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) return { ok: false, error: "Not authenticated." };
-  const role = (session.user as { role?: string | null }).role ?? null;
+  const position = (session.user as { position?: string | null }).position ?? null;
   const user = await prisma.users.findUnique({
     where: { email: session.user.email },
     select: { user_id: true },
   });
   if (!user) return { ok: false, error: "User record not found." };
   const departmentId = await getActiveDepartmentId(user.user_id);
-  return { ok: true, userId: user.user_id, role, departmentId };
+  return { ok: true, userId: user.user_id, position, departmentId };
 }
 
 async function loadRequestForAction(leaveId: number) {
@@ -156,7 +162,7 @@ export async function approveLeaveRequest(leaveId: number): Promise<ApprovalActi
   if (!req) return { ok: false, error: "Leave request not found." };
 
   const decision = resolveHodAction({
-    actorRole: actor.role,
+    actorPosition: actor.position,
     actorDepartmentId: actor.departmentId,
     requestStatus: req.status,
     requesterDepartmentId: req.requesterDepartmentId,
@@ -186,7 +192,7 @@ export async function rejectLeaveRequest(
   if (!req) return { ok: false, error: "Leave request not found." };
 
   const decision = resolveHodAction({
-    actorRole: actor.role,
+    actorPosition: actor.position,
     actorDepartmentId: actor.departmentId,
     requestStatus: req.status,
     requesterDepartmentId: req.requesterDepartmentId,

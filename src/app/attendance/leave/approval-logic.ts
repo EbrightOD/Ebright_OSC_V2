@@ -1,8 +1,11 @@
 // Pure decision logic for HOD leave approvals. No Prisma, no session, no I/O.
 
+/** A HOD is identified by their active employment position (not by role_type). */
+export const HOD_POSITION = "FT HOD";
+
 export interface HodActionContext {
-  /** session.user.role of the actor */
-  actorRole: string | null | undefined;
+  /** the actor's active employment position (e.g. "FT HOD") */
+  actorPosition: string | null | undefined;
   /** the HOD's own active department id; null if unknown */
   actorDepartmentId: number | null;
   /** current status of the leave request */
@@ -13,9 +16,9 @@ export interface HodActionContext {
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
-/** Whether this actor (a HOD) may approve/reject this request. */
+/** Whether this actor (a HOD by position) may approve/reject this request. */
 export function resolveHodAction(ctx: HodActionContext): ActionResult {
-  if (ctx.actorRole !== "hod") {
+  if (ctx.actorPosition !== HOD_POSITION) {
     return { ok: false, error: "You are not authorized to action leave requests." };
   }
   if (ctx.requestStatus !== "pending") {

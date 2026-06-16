@@ -8,6 +8,7 @@ import LeaveApprovalsView, {
   type HrApprovedItem,
 } from "@/app/components/LeaveApprovalsView";
 import { getActiveDepartmentId, loadHodPending, loadHrApproved } from "../approval-queries";
+import { HOD_POSITION } from "../approval-logic";
 
 export const dynamic = "force-dynamic";
 
@@ -16,8 +17,11 @@ export default async function LeaveApprovalsPage() {
   if (!session?.user?.email) redirect("/login");
 
   const role = (session.user as { role?: string } | undefined)?.role ?? "";
-  if (role !== "hod" && role !== "hr") redirect("/home");
-  const mode: "hod" | "hr" = role === "hod" ? "hod" : "hr";
+  const position = (session.user as { position?: string } | undefined)?.position ?? "";
+  const isHod = position === HOD_POSITION;
+  const isHr = role === "hr";
+  if (!isHod && !isHr) redirect("/home");
+  const mode: "hod" | "hr" = isHod ? "hod" : "hr";
 
   const me = await prisma.users.findUnique({
     where: { email: session.user.email },
