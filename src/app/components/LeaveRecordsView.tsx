@@ -14,12 +14,56 @@ export interface LeaveRecordItem {
   appliedAt: string;
 }
 
-const STATUS_STYLE: Record<string, { bg: string; text: string; label: string }> = {
-  pending: { bg: "#FFFBEB", text: "#92400E", label: "Pending" },
-  approved: { bg: "#ECFDF5", text: "#047857", label: "Approved" },
-  rejected: { bg: "#FEF2F2", text: "#991B1B", label: "Rejected" },
-  cancelled: { bg: "#F1F5F9", text: "#475569", label: "Cancelled" },
+const STATUS_STYLE: Record<string, { bg: string; text: string; dot: string; label: string }> = {
+  pending: { bg: "#FFFBEB", text: "#92400E", dot: "#F59E0B", label: "Pending" },
+  approved: { bg: "#ECFDF5", text: "#047857", dot: "#10B981", label: "Approved" },
+  rejected: { bg: "#FEF2F2", text: "#991B1B", dot: "#EF4444", label: "Rejected" },
+  cancelled: { bg: "#F1F5F9", text: "#475569", dot: "#94A3B8", label: "Cancelled" },
 };
+
+// Donut slices, in order. Total is shown in the center, not as a slice.
+const DONUT_ORDER = ["pending", "approved", "rejected", "cancelled"] as const;
+
+function RecordsDonut({ counts, total }: { counts: Record<string, number>; total: number }) {
+  const radius = 56;
+  const circumference = 2 * Math.PI * radius;
+  const sum = DONUT_ORDER.reduce((acc, k) => acc + (counts[k] ?? 0), 0);
+
+  let offset = 0;
+
+  return (
+    <div className="relative w-40 h-40 shrink-0">
+      <svg viewBox="0 0 160 160" className="w-40 h-40 -rotate-90">
+        <circle cx="80" cy="80" r={radius} fill="none" stroke="#F1F5F9" strokeWidth="20" />
+        {sum > 0 &&
+          DONUT_ORDER.map((k) => {
+            const value = counts[k] ?? 0;
+            if (value === 0) return null;
+            const length = (value / sum) * circumference;
+            const slice = (
+              <circle
+                key={k}
+                cx="80"
+                cy="80"
+                r={radius}
+                fill="none"
+                stroke={STATUS_STYLE[k].dot}
+                strokeWidth="20"
+                strokeDasharray={`${length} ${circumference - length}`}
+                strokeDashoffset={-offset}
+              />
+            );
+            offset += length;
+            return slice;
+          })}
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-3xl font-bold text-slate-900">{total}</span>
+        <span className="text-[11px] font-semibold tracking-widest text-slate-400">TOTAL</span>
+      </div>
+    </div>
+  );
+}
 
 export default function LeaveRecordsView({
   scopeLabel,
@@ -28,6 +72,11 @@ export default function LeaveRecordsView({
   scopeLabel: string;
   rows?: LeaveRecordItem[];
 }) {
+  const counts: Record<string, number> = { pending: 0, approved: 0, rejected: 0, cancelled: 0 };
+  for (const r of rows) {
+    if (r.status in counts) counts[r.status] += 1;
+  }
+
   return (
     <div className="min-h-full bg-slate-50">
       <div className="max-w-7xl mx-auto px-6 pt-4 pb-10 space-y-6">
@@ -51,6 +100,30 @@ export default function LeaveRecordsView({
             {rows.length} {rows.length === 1 ? "record" : "records"}
           </p>
         </header>
+
+        {rows.length > 0 && (
+          <section
+            className="bg-white border border-slate-200 rounded-2xl px-6 py-5 flex items-center gap-6"
+            style={{ maxWidth: "460px" }}
+          >
+            <RecordsDonut counts={counts} total={rows.length} />
+            <ul className="space-y-2 min-w-0 flex-1">
+              {DONUT_ORDER.map((k) => (
+                <li key={k} className="flex items-center gap-2 text-sm">
+                  <span
+                    className="w-2.5 h-2.5 rounded-full shrink-0"
+                    style={{ backgroundColor: STATUS_STYLE[k].dot }}
+                    aria-hidden="true"
+                  />
+                  <span className="text-slate-600">{STATUS_STYLE[k].label}</span>
+                  <span className="ml-auto font-semibold text-slate-900 tabular-nums">
+                    {counts[k] ?? 0}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         {rows.length === 0 ? (
           <section className="bg-white border border-slate-200 rounded-2xl px-6 py-12 text-center">
