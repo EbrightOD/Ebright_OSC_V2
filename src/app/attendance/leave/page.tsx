@@ -16,6 +16,17 @@ export default async function LeavePage() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) redirect("/login");
 
+  // Oversight accounts (department-role + superadmin) don't submit leave — they read
+  // the records page instead.
+  if (
+    resolveLeaveRecordsAccess({
+      role: (session.user as { role?: string } | undefined)?.role ?? "",
+      email: session.user.email,
+    }).kind !== "none"
+  ) {
+    redirect("/attendance/leave/records");
+  }
+
   const me = await prisma.users.findUnique({
     where: { email: session.user.email },
     select: { user_id: true },
@@ -65,9 +76,6 @@ export default async function LeavePage() {
   const departmentId = isHod ? await getActiveDepartmentId(me.user_id) : null;
   const approvalItems = departmentId != null ? await loadHodPending(departmentId) : [];
 
-  const canViewRecords =
-    resolveLeaveRecordsAccess({ role: userRole, email: userEmail }).kind !== "none";
-
   return (
     <AppShell email={userEmail} role={userRole} name={userName}>
       <LeaveRequestsView
@@ -75,7 +83,6 @@ export default async function LeavePage() {
         counts={counts}
         canApprove={isHod}
         approvalItems={approvalItems}
-        canViewRecords={canViewRecords}
       />
     </AppShell>
   );

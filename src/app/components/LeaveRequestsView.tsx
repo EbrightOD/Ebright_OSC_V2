@@ -111,13 +111,11 @@ export default function LeaveRequestsView({
   counts,
   canApprove = false,
   approvalItems = [],
-  canViewRecords = false,
 }: {
   rows?: LeaveRow[];
   counts?: LeaveStatusCounts;
   canApprove?: boolean;
   approvalItems?: HodApprovalItem[];
-  canViewRecords?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -188,23 +186,13 @@ export default function LeaveRequestsView({
               Apply for leave and track the status of your requests.
             </p>
           </div>
-          <div className="shrink-0 flex items-center gap-2">
-            {canViewRecords && (
-              <Link
-                href="/attendance/leave/records"
-                className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors whitespace-nowrap"
-              >
-                Leave Records
-              </Link>
-            )}
-            <Link
-              href="/attendance/leave/new"
-              className="inline-flex items-center justify-center gap-2 bg-emerald-600 text-white rounded-xl px-5 py-2.5 text-sm font-semibold hover:bg-emerald-700 transition-colors shadow-sm shadow-emerald-600/20 whitespace-nowrap"
-            >
-              <Plus className="w-4 h-4" aria-hidden="true" />
-              Apply for Leave
-            </Link>
-          </div>
+          <Link
+            href="/attendance/leave/new"
+            className="shrink-0 inline-flex items-center justify-center gap-2 bg-emerald-600 text-white rounded-xl px-5 py-2.5 text-sm font-semibold hover:bg-emerald-700 transition-colors shadow-sm shadow-emerald-600/20 whitespace-nowrap"
+          >
+            <Plus className="w-4 h-4" aria-hidden="true" />
+            Apply for Leave
+          </Link>
         </header>
 
         {canApprove && (
