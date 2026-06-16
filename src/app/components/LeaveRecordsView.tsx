@@ -1,0 +1,113 @@
+import Link from "next/link";
+import { Home, ChevronRight, Inbox } from "lucide-react";
+
+export interface LeaveRecordItem {
+  leaveId: number;
+  displayId: string;
+  requesterName: string;
+  departmentName: string | null;
+  leaveTypeName: string;
+  startDate: string;
+  endDate: string;
+  totalDays: number;
+  status: string;
+  appliedAt: string;
+}
+
+const STATUS_STYLE: Record<string, { bg: string; text: string; label: string }> = {
+  pending: { bg: "#FFFBEB", text: "#92400E", label: "Pending" },
+  approved: { bg: "#ECFDF5", text: "#047857", label: "Approved" },
+  rejected: { bg: "#FEF2F2", text: "#991B1B", label: "Rejected" },
+  cancelled: { bg: "#F1F5F9", text: "#475569", label: "Cancelled" },
+};
+
+export default function LeaveRecordsView({
+  scopeLabel,
+  rows = [],
+}: {
+  scopeLabel: string;
+  rows?: LeaveRecordItem[];
+}) {
+  return (
+    <div className="min-h-full bg-slate-50">
+      <div className="max-w-7xl mx-auto px-6 pt-4 pb-10 space-y-6">
+        <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-sm text-slate-500">
+          <Link href="/home" className="flex items-center gap-1 hover:text-slate-900 transition-colors">
+            <Home className="w-4 h-4" aria-hidden="true" />
+            <span>Home</span>
+          </Link>
+          <ChevronRight className="w-4 h-4 text-slate-400" aria-hidden="true" />
+          <Link href="/attendance" className="hover:text-slate-900 transition-colors">Attendance</Link>
+          <ChevronRight className="w-4 h-4 text-slate-400" aria-hidden="true" />
+          <span className="text-slate-900 font-medium">Records</span>
+        </nav>
+
+        <header className="flex items-end justify-between gap-4">
+          <div>
+            <h1 className="text-3xl md:text-4xl font-semibold text-slate-900 tracking-tight">{scopeLabel}</h1>
+            <p className="mt-1 text-sm text-slate-500">Read-only view of submitted leave requests.</p>
+          </div>
+          <p className="text-xs text-slate-500 shrink-0">
+            {rows.length} {rows.length === 1 ? "record" : "records"}
+          </p>
+        </header>
+
+        {rows.length === 0 ? (
+          <section className="bg-white border border-slate-200 rounded-2xl px-6 py-12 text-center">
+            <div className="mx-auto w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
+              <Inbox className="w-5 h-5 text-slate-400" aria-hidden="true" />
+            </div>
+            <p className="mt-3 text-sm font-medium text-slate-900">No leave records to show.</p>
+          </section>
+        ) : (
+          <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-[11px] font-semibold tracking-widest text-slate-500 uppercase">
+                  <tr>
+                    <th className="text-left px-6 py-3">ID</th>
+                    <th className="text-left px-6 py-3">Employee</th>
+                    <th className="text-left px-6 py-3">Department</th>
+                    <th className="text-left px-6 py-3">Type</th>
+                    <th className="text-left px-6 py-3">Dates</th>
+                    <th className="text-left px-6 py-3">Days</th>
+                    <th className="text-left px-6 py-3">Status</th>
+                    <th className="text-left px-6 py-3">Applied</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r) => {
+                    const s = STATUS_STYLE[r.status] ?? {
+                      bg: "#F1F5F9",
+                      text: "#475569",
+                      label: r.status,
+                    };
+                    return (
+                      <tr key={r.leaveId} className="border-t border-slate-100">
+                        <td className="px-6 py-3 font-medium text-slate-900">{r.displayId}</td>
+                        <td className="px-6 py-3 text-slate-700">{r.requesterName}</td>
+                        <td className="px-6 py-3 text-slate-500">{r.departmentName ?? "—"}</td>
+                        <td className="px-6 py-3 text-slate-700">{r.leaveTypeName}</td>
+                        <td className="px-6 py-3 text-slate-500">{r.startDate} → {r.endDate}</td>
+                        <td className="px-6 py-3 text-slate-700">{r.totalDays}</td>
+                        <td className="px-6 py-3">
+                          <span
+                            className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
+                            style={{ backgroundColor: s.bg, color: s.text }}
+                          >
+                            {s.label}
+                          </span>
+                        </td>
+                        <td className="px-6 py-3 text-slate-500">{r.appliedAt.slice(0, 10)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -44,3 +44,35 @@ export function validateRejectionReason(reason: string): ReasonResult {
   if (!trimmed) return { ok: false, error: "A reason is required to reject a request." };
   return { ok: true, reason: trimmed };
 }
+
+// --- Leave records (read-only oversight) access ---------------------------------
+
+/** HR oversight account: sees every leave request company-wide. */
+export const HR_OVERVIEW_EMAIL = "hr@ebright.my";
+/** Superadmin account: scoped to the Optimisation department (it has no employment row). */
+export const SUPERADMIN_EMAIL = "od@ebright.my";
+/** Department the superadmin account is mapped to (resolved by name at runtime). */
+export const OPTIMISATION_DEPARTMENT_NAME = "Optimisation";
+
+export type LeaveRecordsAccess =
+  | { kind: "all" } // company-wide
+  | { kind: "optimisation" } // od@ebright.my -> Optimisation department
+  | { kind: "own-department" } // department-role users -> their own department
+  | { kind: "none" }; // no access
+
+/**
+ * Decides which leave records a viewer may see. Email checks come before the role
+ * check because hr@ebright.my is itself a "department"-role user (it must get "all",
+ * not its own department), and od@ebright.my (superadmin) has no employment to derive
+ * a department from.
+ */
+export function resolveLeaveRecordsAccess(input: {
+  role: string | null | undefined;
+  email: string | null | undefined;
+}): LeaveRecordsAccess {
+  const email = (input.email ?? "").toLowerCase();
+  if (email === HR_OVERVIEW_EMAIL) return { kind: "all" };
+  if (email === SUPERADMIN_EMAIL) return { kind: "optimisation" };
+  if (input.role === "department") return { kind: "own-department" };
+  return { kind: "none" };
+}
