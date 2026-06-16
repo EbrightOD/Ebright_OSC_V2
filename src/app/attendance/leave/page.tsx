@@ -7,6 +7,8 @@ import LeaveRequestsView, {
   type LeaveRow,
   type LeaveStatusCounts,
 } from "@/app/components/LeaveRequestsView";
+import { HOD_POSITION } from "./approval-logic";
+import { getActiveDepartmentId, loadHodPending } from "./approval-queries";
 
 export const dynamic = "force-dynamic";
 
@@ -54,11 +56,23 @@ export default async function LeavePage() {
 
   const userEmail = session.user?.email ?? "";
   const userRole = (session.user as { role?: string } | undefined)?.role ?? "";
+  const userPosition = (session.user as { position?: string } | undefined)?.position ?? "";
   const userName = session.user?.name ?? null;
+
+  // FT HODs can approve pending requests from their own department, surfaced as a
+  // "To Approve" tab on this page.
+  const isHod = userPosition === HOD_POSITION;
+  const departmentId = isHod ? await getActiveDepartmentId(me.user_id) : null;
+  const approvalItems = departmentId != null ? await loadHodPending(departmentId) : [];
 
   return (
     <AppShell email={userEmail} role={userRole} name={userName}>
-      <LeaveRequestsView rows={rows} counts={counts} />
+      <LeaveRequestsView
+        rows={rows}
+        counts={counts}
+        canApprove={isHod}
+        approvalItems={approvalItems}
+      />
     </AppShell>
   );
 }

@@ -11,6 +11,7 @@ import {
   Inbox,
   Eye,
 } from "lucide-react";
+import HodApprovalTable, { type HodApprovalItem } from "@/app/components/HodApprovalTable";
 
 export interface LeaveRow {
   leaveId: number;
@@ -55,17 +56,72 @@ const statCards = [
   { key: "cancelled", label: "CANCELLED", dot: "bg-slate-400", text: "text-slate-600", ring: "" },
 ] as const;
 
+// Segments shown in the donut (total is rendered in the center, not as a slice).
+const DONUT_SEGMENTS = [
+  { key: "pending", label: "Pending", color: STATUS_BADGE.pending.dot },
+  { key: "approved", label: "Approved", color: STATUS_BADGE.approved.dot },
+  { key: "rejected", label: "Rejected", color: STATUS_BADGE.rejected.dot },
+  { key: "cancelled", label: "Cancelled", color: STATUS_BADGE.cancelled.dot },
+] as const;
+
+function StatusDonut({ counts }: { counts: Record<string, number> }) {
+  const radius = 56;
+  const circumference = 2 * Math.PI * radius;
+  const sum = DONUT_SEGMENTS.reduce((acc, s) => acc + (counts[s.key] ?? 0), 0);
+
+  let offset = 0;
+
+  return (
+    <div className="relative w-40 h-40 shrink-0">
+      <svg viewBox="0 0 160 160" className="w-40 h-40 -rotate-90">
+        {/* Track */}
+        <circle cx="80" cy="80" r={radius} fill="none" stroke="#F1F5F9" strokeWidth="20" />
+        {sum > 0 &&
+          DONUT_SEGMENTS.map((s) => {
+            const value = counts[s.key] ?? 0;
+            if (value === 0) return null;
+            const length = (value / sum) * circumference;
+            const circle = (
+              <circle
+                key={s.key}
+                cx="80"
+                cy="80"
+                r={radius}
+                fill="none"
+                stroke={s.color}
+                strokeWidth="20"
+                strokeDasharray={`${length} ${circumference - length}`}
+                strokeDashoffset={-offset}
+              />
+            );
+            offset += length;
+            return circle;
+          })}
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-3xl font-bold text-slate-900">{counts.total ?? 0}</span>
+        <span className="text-[11px] font-semibold tracking-widest text-slate-400">TOTAL</span>
+      </div>
+    </div>
+  );
+}
+
 export default function LeaveRequestsView({
   rows = [],
   counts,
+  canApprove = false,
+  approvalItems = [],
 }: {
   rows?: LeaveRow[];
   counts?: LeaveStatusCounts;
+  canApprove?: boolean;
+  approvalItems?: HodApprovalItem[];
 }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [monthFilter, setMonthFilter] = useState("");
+  const [tab, setTab] = useState<"mine" | "approve">("mine");
 
   const typeOptions = useMemo(() => {
     const seen = new Map<string, string>();
@@ -139,31 +195,87 @@ export default function LeaveRequestsView({
           </Link>
         </header>
 
-        {/* Stat cards */}
+        {canApprove && (
+          <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1 text-sm font-medium">
+            <button
+              type="button"
+              onClick={() => setTab("mine")}
+              className={`px-4 py-1.5 rounded-lg transition-colors ${
+                tab === "mine" ? "bg-emerald-600 text-white" : "text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              My Requests
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab("approve")}
+              className={`px-4 py-1.5 rounded-lg transition-colors ${
+                tab === "approve" ? "bg-emerald-600 text-white" : "text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              To Approve{approvalItems.length > 0 ? ` (${approvalItems.length})` : ""}
+            </button>
+          </div>
+        )}
+
+        {tab === "mine" && (
+          <>
+        {/* Status overview */}
         <section
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+            gridTemplateColumns: "minmax(300px, 360px) 1fr",
             gap: "1rem",
           }}
         >
-          {statCards.map((card) => {
-            const value = displayCounts[card.key];
-            return (
-              <div
-                key={card.key}
-                className={`bg-white border border-slate-200 rounded-2xl px-5 py-4 ${card.ring}`}
-              >
-                <div className="flex items-center gap-2">
-                  <span className={`w-2 h-2 rounded-full ${card.dot}`} aria-hidden="true" />
-                  <p className="text-[11px] font-semibold tracking-widest text-slate-500">
-                    {card.label}
-                  </p>
-                </div>
-                <p className={`mt-2 text-3xl font-bold ${card.text}`}>{value}</p>
-              </div>
-            );
-          })}
+          {/* Donut chart */}
+          <div className="bg-white border border-slate-200 rounded-2xl px-6 py-5 flex items-center gap-6">
+            <StatusDonut counts={displayCounts} />
+            <ul className="space-y-2 min-w-0">
+              {DONUT_SEGMENTS.map((s) => (
+                <li key={s.key} className="flex items-center gap-2 text-sm">
+                  <span
+                    className="w-2.5 h-2.5 rounded-full shrink-0"
+                    style={{ backgroundColor: s.color }}
+                    aria-hidden="true"
+                  />
+                  <span className="text-slate-600">{s.label}</span>
+                  <span className="ml-auto font-semibold text-slate-900 tabular-nums">
+                    {displayCounts[s.key]}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Status cards */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+              gap: "1rem",
+            }}
+          >
+            {statCards
+              .filter((card) => card.key !== "total")
+              .map((card) => {
+                const value = displayCounts[card.key];
+                return (
+                  <div
+                    key={card.key}
+                    className={`bg-white border border-slate-200 rounded-2xl px-5 py-4 ${card.ring}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${card.dot}`} aria-hidden="true" />
+                      <p className="text-[11px] font-semibold tracking-widest text-slate-500">
+                        {card.label}
+                      </p>
+                    </div>
+                    <p className={`mt-2 text-3xl font-bold ${card.text}`}>{value}</p>
+                  </div>
+                );
+              })}
+          </div>
         </section>
 
         {/* Filters */}
@@ -349,6 +461,10 @@ export default function LeaveRequestsView({
             </table>
           </div>
         </section>
+          </>
+        )}
+
+        {tab === "approve" && canApprove && <HodApprovalTable items={approvalItems} />}
       </div>
     </div>
   );
