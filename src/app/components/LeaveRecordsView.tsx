@@ -16,13 +16,14 @@ export interface LeaveRecordItem {
 
 const STATUS_STYLE: Record<string, { bg: string; text: string; dot: string; label: string }> = {
   pending: { bg: "#FFFBEB", text: "#92400E", dot: "#F59E0B", label: "Pending" },
+  hod_approved: { bg: "#EFF6FF", text: "#1D4ED8", dot: "#3B82F6", label: "HOD Approved" },
   approved: { bg: "#ECFDF5", text: "#047857", dot: "#10B981", label: "Approved" },
   rejected: { bg: "#FEF2F2", text: "#991B1B", dot: "#EF4444", label: "Rejected" },
   cancelled: { bg: "#F1F5F9", text: "#475569", dot: "#94A3B8", label: "Cancelled" },
 };
 
 // Donut slices, in order. Total is shown in the center, not as a slice.
-const DONUT_ORDER = ["pending", "approved", "rejected", "cancelled"] as const;
+const DONUT_ORDER = ["pending", "hod_approved", "approved", "rejected", "cancelled"] as const;
 
 function RecordsDonut({ counts, total }: { counts: Record<string, number>; total: number }) {
   const radius = 56;
@@ -117,11 +118,19 @@ function LeaveStatsBar({ stats, maxCount }: { stats: MonthStat[]; maxCount: numb
 export default function LeaveRecordsView({
   scopeLabel,
   rows = [],
+  canApprove = false,
 }: {
   scopeLabel: string;
   rows?: LeaveRecordItem[];
+  canApprove?: boolean;
 }) {
-  const counts: Record<string, number> = { pending: 0, approved: 0, rejected: 0, cancelled: 0 };
+  const counts: Record<string, number> = {
+    pending: 0,
+    hod_approved: 0,
+    approved: 0,
+    rejected: 0,
+    cancelled: 0,
+  };
   for (const r of rows) {
     if (r.status in counts) counts[r.status] += 1;
   }
@@ -157,20 +166,47 @@ export default function LeaveRecordsView({
             <h1 className="text-3xl md:text-4xl font-semibold text-slate-900 tracking-tight">{scopeLabel}</h1>
             <p className="mt-1 text-sm text-slate-500">Read-only view of submitted leave requests.</p>
           </div>
-          <p className="text-xs text-slate-500 shrink-0">
-            {rows.length} {rows.length === 1 ? "record" : "records"}
-          </p>
-        </header>
-
-        {counts.pending > 0 && (
-          <div className="flex items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            <Hourglass className="w-4 h-4 shrink-0 text-amber-600" aria-hidden="true" />
-            <span>
-              {counts.pending === 1
-                ? "There is 1 pending leave request awaiting approval."
-                : `There are ${counts.pending} pending leave requests awaiting approval.`}
+          <div className="flex items-center gap-3 shrink-0">
+            {canApprove && (
+              <Link
+                href="/attendance/leave/approvals"
+                className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                Approvals
+              </Link>
+            )}
+            <span className="text-xs text-slate-500">
+              {rows.length} {rows.length === 1 ? "record" : "records"}
             </span>
           </div>
+        </header>
+
+        {canApprove && counts.hod_approved > 0 ? (
+          <div className="flex items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <Hourglass className="w-4 h-4 shrink-0 text-amber-600" aria-hidden="true" />
+            <span className="flex-1">
+              {counts.hod_approved === 1
+                ? "There is 1 request awaiting your final approval."
+                : `There are ${counts.hod_approved} requests awaiting your final approval.`}
+            </span>
+            <Link
+              href="/attendance/leave/approvals"
+              className="shrink-0 inline-flex items-center justify-center rounded-lg bg-amber-600 text-white px-3 py-1.5 text-xs font-semibold hover:bg-amber-700 transition-colors"
+            >
+              Review
+            </Link>
+          </div>
+        ) : (
+          counts.pending > 0 && (
+            <div className="flex items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <Hourglass className="w-4 h-4 shrink-0 text-amber-600" aria-hidden="true" />
+              <span>
+                {counts.pending === 1
+                  ? "There is 1 pending leave request awaiting approval."
+                  : `There are ${counts.pending} pending leave requests awaiting approval.`}
+              </span>
+            </div>
+          )
         )}
 
         {rows.length > 0 && (

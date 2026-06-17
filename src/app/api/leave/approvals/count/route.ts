@@ -5,24 +5,24 @@ import { prisma } from "@/lib/prisma";
 import {
   getActiveDepartmentId,
   countHodPending,
-  countHrRecentApproved,
+  countHrQueue,
 } from "@/app/attendance/leave/approval-queries";
-import { HOD_POSITION } from "@/app/attendance/leave/approval-logic";
+import { HOD_POSITION, HR_OVERVIEW_EMAIL } from "@/app/attendance/leave/approval-logic";
 
 export const dynamic = "force-dynamic";
 
 // Badge count:
-//  - HR (role "hr")        -> requests approved in the last 7 days
+//  - HR (hr@ebright.my)    -> HOD-approved requests awaiting final approval
 //  - HOD (position FT HOD) -> pending requests in their department
 //  - else                  -> 0
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) return NextResponse.json({ count: 0 });
-  const role = (session.user as { role?: string | null }).role ?? null;
+  const email = session.user.email.toLowerCase();
   const position = (session.user as { position?: string | null }).position ?? null;
 
-  if (role === "hr") {
-    return NextResponse.json({ count: await countHrRecentApproved() });
+  if (email === HR_OVERVIEW_EMAIL) {
+    return NextResponse.json({ count: await countHrQueue() });
   }
 
   if (position === HOD_POSITION) {

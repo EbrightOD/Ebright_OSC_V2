@@ -30,6 +30,7 @@ export interface LeaveRow {
 export interface LeaveStatusCounts {
   total: number;
   pending: number;
+  hod_approved: number;
   approved: number;
   rejected: number;
   cancelled: number;
@@ -44,6 +45,7 @@ const STATUS_OPTIONS = [
 
 const STATUS_BADGE: Record<string, { bg: string; text: string; dot: string; label: string }> = {
   pending: { bg: "#FFFBEB", text: "#92400E", dot: "#F59E0B", label: "Pending" },
+  hod_approved: { bg: "#EFF6FF", text: "#1D4ED8", dot: "#3B82F6", label: "HOD Approved" },
   approved: { bg: "#ECFDF5", text: "#047857", dot: "#10B981", label: "Approved" },
   rejected: { bg: "#FEF2F2", text: "#991B1B", dot: "#EF4444", label: "Rejected" },
   cancelled: { bg: "#F1F5F9", text: "#475569", dot: "#94A3B8", label: "Cancelled" },
@@ -52,6 +54,7 @@ const STATUS_BADGE: Record<string, { bg: string; text: string; dot: string; labe
 const statCards = [
   { key: "total", label: "TOTAL", dot: "bg-blue-500", text: "text-blue-600", ring: "ring-blue-200 bg-blue-50/40" },
   { key: "pending", label: "PENDING", dot: "bg-amber-500", text: "text-amber-600", ring: "" },
+  { key: "hod_approved", label: "HOD APPROVED", dot: "bg-blue-500", text: "text-blue-600", ring: "" },
   { key: "approved", label: "APPROVED", dot: "bg-emerald-500", text: "text-emerald-600", ring: "" },
   { key: "rejected", label: "REJECTED", dot: "bg-red-500", text: "text-red-600", ring: "" },
   { key: "cancelled", label: "CANCELLED", dot: "bg-slate-400", text: "text-slate-600", ring: "" },
@@ -60,6 +63,7 @@ const statCards = [
 // Segments shown in the donut (total is rendered in the center, not as a slice).
 const DONUT_SEGMENTS = [
   { key: "pending", label: "Pending", color: STATUS_BADGE.pending.dot },
+  { key: "hod_approved", label: "HOD Approved", color: STATUS_BADGE.hod_approved.dot },
   { key: "approved", label: "Approved", color: STATUS_BADGE.approved.dot },
   { key: "rejected", label: "Rejected", color: STATUS_BADGE.rejected.dot },
   { key: "cancelled", label: "Cancelled", color: STATUS_BADGE.cancelled.dot },
@@ -155,6 +159,7 @@ export default function LeaveRequestsView({
   const displayCounts: Record<string, number> = {
     total: counts?.total ?? 0,
     pending: counts?.pending ?? 0,
+    hod_approved: counts?.hod_approved ?? 0,
     approved: counts?.approved ?? 0,
     rejected: counts?.rejected ?? 0,
     cancelled: counts?.cancelled ?? 0,

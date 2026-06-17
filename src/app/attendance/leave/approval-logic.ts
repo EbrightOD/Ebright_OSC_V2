@@ -3,10 +3,19 @@
 /** A HOD is identified by their active employment position (not by role_type). */
 export const HOD_POSITION = "FT HOD";
 
-export interface HodActionContext {
+// Two-stage approval:
+//   pending --HOD approve--> hod_approved --HR approve--> approved
+// HOD is identified by position (FT HOD) + department; HR by email, company-wide.
+export const HOD_APPROVED_STATUS = "hod_approved";
+
+export type LeaveActionStage = "hod" | "hr";
+
+export interface LeaveActionContext {
   /** the actor's active employment position (e.g. "FT HOD") */
   actorPosition: string | null | undefined;
-  /** the HOD's own active department id; null if unknown */
+  /** the actor's email (used to identify HR) */
+  actorEmail: string | null | undefined;
+  /** the actor's own active department id; null if unknown */
   actorDepartmentId: number | null;
   /** current status of the leave request */
   requestStatus: string;
@@ -14,26 +23,43 @@ export interface HodActionContext {
   requesterDepartmentId: number | null;
 }
 
-export type ActionResult = { ok: true } | { ok: false; error: string };
+export type StageResult = { ok: true; stage: LeaveActionStage } | { ok: false; error: string };
 
-/** Whether this actor (a HOD by position) may approve/reject this request. */
-export function resolveHodAction(ctx: HodActionContext): ActionResult {
-  if (ctx.actorPosition !== HOD_POSITION) {
-    return { ok: false, error: "You are not authorized to action leave requests." };
+/** Decides whether the actor may act on the request and, if so, at which stage. */
+export function resolveLeaveAction(ctx: LeaveActionContext): StageResult {
+  const email = (ctx.actorEmail ?? "").toLowerCase();
+
+  // HR finalizes HOD-approved requests, company-wide.
+  if (email === HR_OVERVIEW_EMAIL) {
+    if (ctx.requestStatus !== HOD_APPROVED_STATUS) {
+      return { ok: false, error: "This request is not awaiting HR approval." };
+    }
+    return { ok: true, stage: "hr" };
   }
-  if (ctx.requestStatus !== "pending") {
-    return { ok: false, error: "This request is no longer awaiting approval." };
+
+  // HOD acts on pending requests from their own department.
+  if (ctx.actorPosition === HOD_POSITION) {
+    if (ctx.requestStatus !== "pending") {
+      return { ok: false, error: "This request is no longer awaiting HOD approval." };
+    }
+    if (ctx.actorDepartmentId == null) {
+      return { ok: false, error: "Your account has no department assigned." };
+    }
+    if (ctx.requesterDepartmentId == null) {
+      return { ok: false, error: "This request's owner has no department assigned." };
+    }
+    if (ctx.requesterDepartmentId !== ctx.actorDepartmentId) {
+      return { ok: false, error: "This request belongs to another department." };
+    }
+    return { ok: true, stage: "hod" };
   }
-  if (ctx.actorDepartmentId == null) {
-    return { ok: false, error: "Your account has no department assigned." };
-  }
-  if (ctx.requesterDepartmentId == null) {
-    return { ok: false, error: "This request's owner has no department assigned." };
-  }
-  if (ctx.requesterDepartmentId !== ctx.actorDepartmentId) {
-    return { ok: false, error: "This request belongs to another department." };
-  }
-  return { ok: true };
+
+  return { ok: false, error: "You are not authorized to action leave requests." };
+}
+
+/** Status a request moves to when approved at the given stage. */
+export function nextStatusForApproval(stage: LeaveActionStage): "hod_approved" | "approved" {
+  return stage === "hod" ? HOD_APPROVED_STATUS : "approved";
 }
 
 export type ReasonResult = { ok: true; reason: string } | { ok: false; error: string };

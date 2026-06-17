@@ -83,6 +83,47 @@ export async function countHodPending(departmentId: number): Promise<number> {
   return prisma.leave_request.count({ where: pendingWhere(departmentId) });
 }
 
+/** HOD-approved requests, company-wide, awaiting HR's final approval. */
+export async function loadHrQueue(): Promise<HodPendingRow[]> {
+  const rows = await prisma.leave_request.findMany({
+    where: { status: "hod_approved" },
+    orderBy: { applied_at: "asc" },
+    include: {
+      leave_types: { select: { name: true } },
+      users_leave_request_user_idTousers: {
+        select: {
+          user_profile: { select: { full_name: true } },
+          employment: {
+            where: { status: "active" },
+            take: 1,
+            select: { department: { select: { department_name: true } } },
+          },
+        },
+      },
+    },
+  });
+
+  return rows.map((r) => {
+    const requester = r.users_leave_request_user_idTousers;
+    return {
+      leaveId: r.leave_id,
+      displayId: `LV-${String(r.leave_id).padStart(3, "0")}`,
+      requesterName: requester.user_profile?.full_name ?? "Unknown",
+      departmentName: requester.employment[0]?.department?.department_name ?? null,
+      leaveTypeName: r.leave_types.name,
+      startDate: r.start_date.toISOString().slice(0, 10),
+      endDate: r.end_date.toISOString().slice(0, 10),
+      totalDays: Number(r.total_days),
+      reason: r.reason,
+      appliedAt: r.applied_at.toISOString(),
+    };
+  });
+}
+
+export async function countHrQueue(): Promise<number> {
+  return prisma.leave_request.count({ where: { status: "hod_approved" } });
+}
+
 /** All approved requests, company-wide, for the HR read-only list. */
 export async function loadHrApproved(): Promise<HrApprovedRow[]> {
   const rows = await prisma.leave_request.findMany({

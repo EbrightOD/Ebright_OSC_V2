@@ -4,7 +4,11 @@ import { authOptions } from "@/lib/nextauth";
 import { prisma } from "@/lib/prisma";
 import AppShell from "@/app/components/AppShell";
 import LeaveRecordsView from "@/app/components/LeaveRecordsView";
-import { resolveLeaveRecordsAccess, OPTIMISATION_DEPARTMENT_NAME } from "../approval-logic";
+import {
+  resolveLeaveRecordsAccess,
+  OPTIMISATION_DEPARTMENT_NAME,
+  HR_OVERVIEW_EMAIL,
+} from "../approval-logic";
 import {
   getActiveDepartmentId,
   getDepartmentIdByName,
@@ -47,10 +51,11 @@ export default async function LeaveRecordsPage() {
   }
 
   const userName = session.user.name ?? null;
+  const canApprove = email.toLowerCase() === HR_OVERVIEW_EMAIL;
 
   return (
     <AppShell email={email} role={role} name={userName}>
-      <LeaveRecordsView scopeLabel={scopeLabel} rows={rows} />
+      <LeaveRecordsView scopeLabel={scopeLabel} rows={rows} canApprove={canApprove} />
     </AppShell>
   );
 }

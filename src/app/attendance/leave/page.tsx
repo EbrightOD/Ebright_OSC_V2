@@ -57,6 +57,7 @@ export default async function LeavePage() {
   const counts: LeaveStatusCounts = {
     total: rows.length,
     pending: 0,
+    hod_approved: 0,
     approved: 0,
     rejected: 0,
     cancelled: 0,
