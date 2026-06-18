@@ -1,75 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import PieChart from "@/app/components/PieChart";
 
-interface TaskView {
-  id: string;
-  name: string;
-  status: string;
-  statusColor: string;
-  dueDate: number | null;
-  priority: string | null;
-  listName: string;
-  folderName: string;
-  ownerName: string | null;
-  url: string;
-}
-interface IndividualTasks { userId: number; name: string; tasks: TaskView[] }
-interface OtherBucket { ownerName: string; tasks: TaskView[] }
 interface StatusSlice { status: string; color: string; count: number }
 
 type Payload =
   | { configured: false }
-  | {
-      configured: true;
-      scope: "own" | "department";
-      viewerUserId: number;
-      departmentName: string;
-      individuals: IndividualTasks[];
-      other: OtherBucket[];
-      statusBreakdown: StatusSlice[];
-      totalTaskCount: number;
-    };
+  | { configured: true; statusBreakdown: StatusSlice[]; totalTaskCount: number };
 
 type State =
   | { kind: "loading" }
   | { kind: "notConfigured" }
   | { kind: "error" }
   | { kind: "ready"; data: Extract<Payload, { configured: true }> };
-
-function formatDue(due: number | null): { label: string; overdue: boolean } {
-  if (due === null) return { label: "No due date", overdue: false };
-  const d = new Date(due);
-  return {
-    label: d.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
-    overdue: due < Date.now(),
-  };
-}
-
-function TaskRow({ task }: { task: TaskView }) {
-  const due = formatDue(task.dueDate);
-  return (
-    <li className="py-2">
-      <a href={task.url} target="_blank" rel="noopener noreferrer" className="group block">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-sm text-slate-800 group-hover:text-indigo-600 truncate">{task.name}</span>
-          <span className={`text-xs whitespace-nowrap ${due.overdue ? "text-red-600 font-medium" : "text-slate-400"}`}>
-            {due.label}
-          </span>
-        </div>
-        <div className="mt-1 flex items-center gap-2 text-xs text-slate-400">
-          <span className="inline-block px-1.5 py-0.5 rounded text-white" style={{ backgroundColor: task.statusColor || "#94a3b8" }}>
-            {task.status || "—"}
-          </span>
-          {task.priority && <span>· {task.priority}</span>}
-          {task.listName && <span className="truncate">· {task.listName}</span>}
-        </div>
-      </a>
-    </li>
-  );
-}
 
 export default function OngoingTasksWidget() {
   const [state, setState] = useState<State>({ kind: "loading" });
@@ -91,19 +35,15 @@ export default function OngoingTasksWidget() {
 
   return (
     <section className="bg-white rounded-lg border border-slate-200 shadow-sm p-5">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-base font-semibold text-slate-900">My ClickUp Tasks</h2>
-        {state.kind === "ready" && state.data.scope === "department" && (
-          <Link href="/tasks" className="text-xs font-medium text-indigo-600 hover:text-indigo-700">
-            View department →
-          </Link>
+      <div className="flex items-baseline justify-between mb-4">
+        <h2 className="text-base font-semibold text-slate-900">ClickUp Tasks by Status</h2>
+        {state.kind === "ready" && (
+          <span className="text-xs text-slate-400">{state.data.totalTaskCount} total</span>
         )}
       </div>
 
       {state.kind === "loading" && (
-        <div className="space-y-2">
-          {[0, 1, 2].map((i) => <div key={i} className="h-10 bg-slate-100 rounded animate-pulse" />)}
-        </div>
+        <div className="h-40 bg-slate-100 rounded animate-pulse" />
       )}
 
       {state.kind === "notConfigured" && (
@@ -112,58 +52,22 @@ export default function OngoingTasksWidget() {
 
       {state.kind === "error" && (
         <div className="text-center py-6">
-          <p className="text-sm text-red-600 mb-3">Couldn&apos;t load your tasks.</p>
+          <p className="text-sm text-red-600 mb-3">Couldn&apos;t load tasks.</p>
           <button onClick={load} className="px-4 py-2 rounded-md bg-slate-100 text-slate-700 text-sm hover:bg-slate-200">
             Retry
           </button>
         </div>
       )}
 
-      {state.kind === "ready" && (() => {
-        const me = state.data.individuals.find((i) => i.userId === state.data.viewerUserId);
-        const others = state.data.individuals.filter((i) => i.userId !== state.data.viewerUserId);
-        const otherTaskCount =
-          others.reduce((n, i) => n + i.tasks.length, 0) +
-          state.data.other.reduce((n, o) => n + o.tasks.length, 0);
-        const otherPeople = others.length + state.data.other.length;
-        return (
-          <>
-            <div className="mb-5">
-              <div className="flex items-baseline justify-between mb-3">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  All tasks by status
-                </h3>
-                <span className="text-xs text-slate-400">{state.data.totalTaskCount} total</span>
-              </div>
-              <PieChart
-                data={state.data.statusBreakdown.map((s) => ({
-                  label: s.status,
-                  value: s.count,
-                  color: s.color,
-                }))}
-              />
-            </div>
-
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2 pt-4 border-t border-slate-100">
-              Assigned to you
-            </h3>
-            {!me || me.tasks.length === 0 ? (
-              <p className="text-sm text-slate-500 py-2">No open tasks assigned to you. 🎉</p>
-            ) : (
-              <ul className="divide-y divide-slate-100">
-                {me.tasks.map((t) => <TaskRow key={t.id} task={t} />)}
-              </ul>
-            )}
-            {state.data.scope === "department" && otherPeople > 0 && (
-              <p className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500">
-                {otherTaskCount} open task{otherTaskCount !== 1 ? "s" : ""} across {otherPeople} other
-                {otherPeople !== 1 ? "s" : ""} in {state.data.departmentName}.{" "}
-                <Link href="/tasks" className="text-indigo-600 hover:text-indigo-700">See all</Link>
-              </p>
-            )}
-          </>
-        );
-      })()}
+      {state.kind === "ready" && (
+        <PieChart
+          data={state.data.statusBreakdown.map((s) => ({
+            label: s.status,
+            value: s.count,
+            color: s.color,
+          }))}
+        />
+      )}
     </section>
   );
 }
