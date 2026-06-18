@@ -118,22 +118,79 @@ export function mapTask(raw: RawTask): ClickUpTaskView {
 // ---- Fetch helper (manually verified) ----
 
 /**
- * All open tasks in the workspace. NOTE: ClickUp paginates at 100 tasks/page and
- * this fetches only the first page — tasks beyond 100 are not scanned. Pagination
- * is intentionally deferred; revisit if a workspace routinely exceeds 100 open
- * tasks (it already does in practice — known limitation).
+ * Fetch every open task in the workspace, across all pages. ClickUp paginates the
+ * filtered team-tasks endpoint at 100 tasks/page and reports `last_page`; we loop
+ * until it's true (or a page is empty). A MAX_PAGES guard bounds runaway loops.
+ */
+async function fetchAllOpenTasks(teamId: string, token: string): Promise<ClickUpTaskView[]> {
+  const MAX_PAGES = 50; // 5000 tasks — a safety bound, not an expected limit
+  const all: ClickUpTaskView[] = [];
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const params = new URLSearchParams({
+      include_closed: "false",
+      subtasks: "true",
+      order_by: "due_date",
+      page: String(page),
+    });
+    const res = await fetch(`${CLICKUP_API_BASE}/team/${teamId}/task?${params.toString()}`, {
+      headers: { Authorization: token },
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error(`ClickUp tasks fetch failed: ${res.status}`);
+    const data = (await res.json()) as { tasks: RawTask[]; last_page?: boolean };
+    all.push(...data.tasks.map(mapTask));
+    if (data.last_page || data.tasks.length === 0) break;
+  }
+
+  return all;
+}
+
+// In-memory cache shared across requests in the long-lived Node server. The
+// workspace has thousands of open tasks, so fetching ~50 pages on every dashboard
+// load would be far too slow; instead we fetch once and serve cached results for
+// CACHE_TTL_MS. The first request after a cold start (or cache expiry) pays the
+// full fetch; subsequent loads are instant. Keyed by teamId.
+const CACHE_TTL_MS = 10 * 60 * 1000;
+type TaskCache = { at: number; tasks: ClickUpTaskView[]; inFlight: Promise<ClickUpTaskView[]> | null };
+const taskCacheByTeam = new Map<string, TaskCache>();
+
+/**
+ * All open tasks in the workspace, served from a 10-minute in-memory cache.
+ * Concurrent callers during a refresh share one in-flight fetch (no thundering
+ * herd). On a refresh failure, the last good cache is returned if available.
  */
 export async function getOpenTasks(teamId: string, token: string): Promise<ClickUpTaskView[]> {
-  const params = new URLSearchParams({
-    include_closed: "false",
-    subtasks: "true",
-    order_by: "due_date",
-  });
-  const res = await fetch(`${CLICKUP_API_BASE}/team/${teamId}/task?${params.toString()}`, {
-    headers: { Authorization: token },
-    cache: "no-store",
-  });
-  if (!res.ok) throw new Error(`ClickUp tasks fetch failed: ${res.status}`);
-  const data = (await res.json()) as { tasks: RawTask[] };
-  return data.tasks.map(mapTask);
+  const now = Date.now();
+  let entry = taskCacheByTeam.get(teamId);
+  if (!entry) {
+    entry = { at: 0, tasks: [], inFlight: null };
+    taskCacheByTeam.set(teamId, entry);
+  }
+
+  const fresh = entry.at > 0 && now - entry.at < CACHE_TTL_MS;
+  if (fresh) return entry.tasks;
+
+  // Coalesce concurrent refreshes into a single fetch.
+  let refresh = entry.inFlight;
+  if (!refresh) {
+    const current = entry;
+    refresh = fetchAllOpenTasks(teamId, token)
+      .then((tasks) => {
+        current.tasks = tasks;
+        current.at = Date.now();
+        return tasks;
+      })
+      .finally(() => {
+        current.inFlight = null;
+      });
+    current.inFlight = refresh;
+  }
+
+  try {
+    return await refresh;
+  } catch (err) {
+    if (entry.at > 0) return entry.tasks; // serve stale on refresh failure
+    throw err;
+  }
 }
