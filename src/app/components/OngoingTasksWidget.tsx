@@ -1,13 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import PieChart from "@/app/components/PieChart";
 
 interface StatusSlice { status: string; color: string; count: number }
 
 type Payload =
   | { configured: false }
-  | { configured: true; statusBreakdown: StatusSlice[]; totalTaskCount: number };
+  | {
+      configured: true;
+      scope: "own" | "department";
+      departmentName: string;
+      statusBreakdown: StatusSlice[];
+      totalTaskCount: number;
+    };
 
 type State =
   | { kind: "loading" }
@@ -60,13 +67,22 @@ export default function OngoingTasksWidget() {
       )}
 
       {state.kind === "ready" && (
-        <PieChart
-          data={state.data.statusBreakdown.map((s) => ({
-            label: s.status,
-            value: s.count,
-            color: s.color,
-          }))}
-        />
+        <>
+          <PieChart
+            data={state.data.statusBreakdown.map((s) => ({
+              label: s.status,
+              value: s.count,
+              color: s.color,
+            }))}
+          />
+          {state.data.scope === "department" && (
+            <div className="mt-4 pt-4 border-t border-slate-100 text-right">
+              <Link href="/tasks" className="text-sm font-medium text-indigo-600 hover:text-indigo-700">
+                View {state.data.departmentName} tasks →
+              </Link>
+            </div>
+          )}
+        </>
       )}
     </section>
   );
