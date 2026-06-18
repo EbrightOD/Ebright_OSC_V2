@@ -1,7 +1,7 @@
 # ClickUp Department Ongoing-Tasks — Design
 
 **Date:** 2026-06-18
-**Status:** Approved (design)
+**Status:** Approved (design) — see **Revision 1** at the bottom for the owner-extraction pivot after inspecting live data.
 
 ## Goal
 
@@ -154,3 +154,66 @@ Fetch helpers (manual verification), all using header `Authorization: <token>`:
 - `src/app/home/page.tsx` — mount the widget (Modify).
 - `.env` / `.env.example` — `CLICKUP_API_TOKEN`, `CLICKUP_TEAM_ID` (Modify;
   values user-owned).
+
+---
+
+## Revision 1 (2026-06-18): owner extracted from folder name
+
+Live inspection of the `Ebright ClickUp` workspace (team `3631897`) invalidated the
+email-assignee model:
+
+- Nearly all open tasks sit under one shared account (`sales@ebright.my`); app
+  employee emails do not match ClickUp member emails.
+- The "PIC" custom field is set on only ~3% of tasks; "Assigned To" holds junk
+  options. Neither is a usable owner source.
+- The real owner is encoded in the **folder name**, in parentheses or after
+  `Intern - `: e.g. `Database and HRMS (Rahman)`, `RM 3 (Manjeet)`,
+  `3.6.9 Intern - Yee Qian`. ~92% of tasks yield an owner this way.
+
+### Revised model
+
+1. **Fetch** all open workspace tasks (no assignee filter). Pagination remains
+   OFF for now (per decision) — only the first 100 tasks are scanned; this is a
+   known limitation to revisit, loudly noted in code.
+2. **Extract owner** from each task's folder name: text in the last `(...)`, else
+   the name after `Intern - `, else `null`.
+3. **Match** the extracted nickname to an app employee via normalized comparison
+   against `user_profile.nick_name` / `full_name` (exact, then whole-word). This
+   yields the owner's `user_id` + `department_id`. Ambiguous first-name collisions
+   resolve to the first match (v1 limitation, noted).
+4. **Scope & group:**
+   - `own`: the viewer sees tasks whose matched employee is themselves.
+   - `department`: tasks whose matched employee is in the viewer's department,
+     grouped by individual.
+   - **`other` bucket** (department scope only, shown on the `/tasks` page):
+     tasks whose owner matched NO employee (interns, unknowns), grouped by the
+     raw ClickUp nickname. Provides visibility without false attribution.
+
+### Revised payload
+
+```
+{ configured: false }
+| { configured: true,
+    scope: "own" | "department",
+    viewerUserId: number,
+    departmentName: string,
+    individuals: [{ userId: number, name: string, tasks: TaskView[] }],
+    other: [{ ownerName: string, tasks: TaskView[] }] }   // [] in own scope
+```
+
+`TaskView = { id, name, status, statusColor, dueDate, priority, listName,
+folderName, ownerName, url }`.
+
+### Revised file responsibilities
+
+- `src/lib/clickup.ts` — replace email helpers with: `mapTask` (now carries
+  `folderName` + extracted `ownerName`), `extractOwner`, `normalizeName`,
+  `matchOwnerToRoster`, `sortByDueDate`. `getOpenTasks(teamId, token)` replaces
+  the assignee-filtered fetch.
+- `src/lib/clickup-queries.ts` — add `getEmployeeRoster()` (all active employees:
+  `user_id`, `full_name`, `nick_name`, `department_id`) and keep
+  `getDepartmentName`. `getDepartmentMembers` is no longer used by the route.
+- `src/app/api/clickup/tasks/route.ts` — fetch all tasks, extract+match owners
+  against the roster, group by scope, build the `other` bucket.
+- `OngoingTasksWidget` / `/tasks` page — consume the revised payload; the page
+  renders the `other` bucket.
