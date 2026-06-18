@@ -6,6 +6,7 @@ import DashboardHome from "@/app/components/DashboardHome";
 import EmployeeSelfServiceDashboard from "@/app/components/EmployeeSelfServiceDashboard";
 import AppShell from "@/app/components/AppShell";
 import HodPendingAlert from "@/app/components/HodPendingAlert";
+import OngoingTasksWidget from "@/app/components/OngoingTasksWidget";
 
 export default function HomePage() {
   const { data: session, status } = useSession({
@@ -34,6 +35,9 @@ export default function HomePage() {
   return (
     <AppShell email={userEmail} role={userRole} name={userName}>
       <HodPendingAlert position={userPosition} />
+      <div className="max-w-7xl mx-auto px-6 pt-6">
+        <OngoingTasksWidget />
+      </div>
       {isStaff ? (
         <EmployeeSelfServiceDashboard userName={userName} userEmail={userEmail} />
       ) : (
