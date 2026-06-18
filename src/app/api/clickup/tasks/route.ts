@@ -4,12 +4,14 @@ import { authOptions } from "@/lib/nextauth";
 import { getActiveDepartmentId } from "@/app/attendance/leave/approval-queries";
 import { resolveTaskScope } from "@/lib/clickup-access";
 import {
-  getWorkspaceMembers,
-  getOpenTasksByAssignees,
-  buildIndividuals,
-  type TargetUser,
+  getOpenTasks,
+  matchOwnerToRoster,
+  sortByDueDate,
+  type ClickUpTaskView,
+  type IndividualTasks,
+  type OtherBucket,
 } from "@/lib/clickup";
-import { getDepartmentMembers, getDepartmentName } from "@/lib/clickup-queries";
+import { getEmployeeRoster, getDepartmentName } from "@/lib/clickup-queries";
 
 export const dynamic = "force-dynamic";
 
@@ -28,45 +30,73 @@ export async function GET() {
     return NextResponse.json({ configured: false });
   }
 
-  const departmentId = await getActiveDepartmentId(Number(user.id));
+  const viewerUserId = Number(user.id);
+  const departmentId = await getActiveDepartmentId(viewerUserId);
   const scope = resolveTaskScope({
     role: user.role,
     position: user.position,
     departmentId,
   });
 
-  let rawTargets: { name: string; email: string }[];
-  let departmentName: string;
-  if (scope.kind === "department") {
-    rawTargets = await getDepartmentMembers(scope.departmentId);
-    departmentName = await getDepartmentName(scope.departmentId);
-  } else {
-    rawTargets = [{ name: user.name ?? user.email, email: user.email }];
-    departmentName = "My Tasks";
-  }
-
   try {
-    const members = await getWorkspaceMembers(teamId, token);
-    const emailToId = new Map(members.map((m) => [m.email, m.id]));
+    const [roster, tasks] = await Promise.all([getEmployeeRoster(), getOpenTasks(teamId, token)]);
 
-    const targets: TargetUser[] = rawTargets.map((t) => ({
-      name: t.name,
-      email: t.email,
-      linked: emailToId.has(t.email.toLowerCase()),
-    }));
+    // Attribute each task to an employee (or null) via its extracted owner name.
+    const tasksByUser = new Map<number, ClickUpTaskView[]>();
+    const unmatchedByOwner = new Map<string, ClickUpTaskView[]>();
+    for (const task of tasks) {
+      const ownerUserId = matchOwnerToRoster(task.ownerName, roster);
+      if (ownerUserId !== null) {
+        const list = tasksByUser.get(ownerUserId) ?? [];
+        list.push(task);
+        tasksByUser.set(ownerUserId, list);
+      } else {
+        const key = task.ownerName ?? "Unassigned";
+        const list = unmatchedByOwner.get(key) ?? [];
+        list.push(task);
+        unmatchedByOwner.set(key, list);
+      }
+    }
 
-    const clickupIds = targets
-      .map((t) => emailToId.get(t.email.toLowerCase()))
-      .filter((id): id is string => Boolean(id));
+    let individuals: IndividualTasks[];
+    let other: OtherBucket[] = [];
+    let departmentName: string;
 
-    const tasks = await getOpenTasksByAssignees(teamId, clickupIds, token);
-    const individuals = buildIndividuals(targets, tasks, user.email);
+    if (scope.kind === "department") {
+      departmentName = await getDepartmentName(scope.departmentId);
+      const members = roster.filter((r) => r.departmentId === scope.departmentId);
+      individuals = members
+        .map((m) => ({
+          userId: m.userId,
+          name: m.fullName || `User ${m.userId}`,
+          tasks: sortByDueDate(tasksByUser.get(m.userId) ?? []),
+        }))
+        .sort((a, b) => {
+          if (a.userId === viewerUserId) return -1;
+          if (b.userId === viewerUserId) return 1;
+          return a.name.localeCompare(b.name);
+        });
+      other = [...unmatchedByOwner.entries()]
+        .map(([ownerName, t]) => ({ ownerName, tasks: sortByDueDate(t) }))
+        .sort((a, b) => b.tasks.length - a.tasks.length);
+    } else {
+      departmentName = "My Tasks";
+      individuals = [
+        {
+          userId: viewerUserId,
+          name: user.name ?? user.email,
+          tasks: sortByDueDate(tasksByUser.get(viewerUserId) ?? []),
+        },
+      ];
+    }
 
     return NextResponse.json({
       configured: true,
       scope: scope.kind,
-      viewerEmail: user.email.toLowerCase(),
-      departments: [{ departmentName, individuals }],
+      viewerUserId,
+      departmentName,
+      individuals,
+      other,
     });
   } catch {
     return NextResponse.json({ error: "Failed to load ClickUp tasks" }, { status: 502 });

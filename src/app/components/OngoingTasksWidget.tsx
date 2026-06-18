@@ -11,15 +11,23 @@ interface TaskView {
   dueDate: number | null;
   priority: string | null;
   listName: string;
+  folderName: string;
+  ownerName: string | null;
   url: string;
-  assigneeEmails: string[];
 }
-interface IndividualTasks { name: string; email: string; linked: boolean; tasks: TaskView[] }
-interface DepartmentGroup { departmentName: string; individuals: IndividualTasks[] }
+interface IndividualTasks { userId: number; name: string; tasks: TaskView[] }
+interface OtherBucket { ownerName: string; tasks: TaskView[] }
 
 type Payload =
   | { configured: false }
-  | { configured: true; scope: "own" | "department"; viewerEmail: string; departments: DepartmentGroup[] };
+  | {
+      configured: true;
+      scope: "own" | "department";
+      viewerUserId: number;
+      departmentName: string;
+      individuals: IndividualTasks[];
+      other: OtherBucket[];
+    };
 
 type State =
   | { kind: "loading" }
@@ -108,9 +116,12 @@ export default function OngoingTasksWidget() {
       )}
 
       {state.kind === "ready" && (() => {
-        const me = state.data.departments[0]?.individuals.find((i) => i.email === state.data.viewerEmail);
-        const others = state.data.departments[0]?.individuals.filter((i) => i.email !== state.data.viewerEmail) ?? [];
-        const otherTaskCount = others.reduce((n, i) => n + i.tasks.length, 0);
+        const me = state.data.individuals.find((i) => i.userId === state.data.viewerUserId);
+        const others = state.data.individuals.filter((i) => i.userId !== state.data.viewerUserId);
+        const otherTaskCount =
+          others.reduce((n, i) => n + i.tasks.length, 0) +
+          state.data.other.reduce((n, o) => n + o.tasks.length, 0);
+        const otherPeople = others.length + state.data.other.length;
         return (
           <>
             {!me || me.tasks.length === 0 ? (
@@ -120,10 +131,10 @@ export default function OngoingTasksWidget() {
                 {me.tasks.map((t) => <TaskRow key={t.id} task={t} />)}
               </ul>
             )}
-            {state.data.scope === "department" && others.length > 0 && (
+            {state.data.scope === "department" && otherPeople > 0 && (
               <p className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500">
-                {otherTaskCount} open task{otherTaskCount !== 1 ? "s" : ""} across {others.length} teammate
-                {others.length !== 1 ? "s" : ""} in {state.data.departments[0].departmentName}.{" "}
+                {otherTaskCount} open task{otherTaskCount !== 1 ? "s" : ""} across {otherPeople} other
+                {otherPeople !== 1 ? "s" : ""} in {state.data.departmentName}.{" "}
                 <Link href="/tasks" className="text-indigo-600 hover:text-indigo-700">See all</Link>
               </p>
             )}

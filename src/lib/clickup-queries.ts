@@ -1,25 +1,28 @@
 import { prisma } from "@/lib/prisma";
+import type { RosterEntry } from "@/lib/clickup";
 
-export interface DepartmentMember {
-  name: string;
-  email: string;
-}
-
-/** Active employees in a department, with display name (falls back to email). */
-export async function getDepartmentMembers(departmentId: number): Promise<DepartmentMember[]> {
+/**
+ * All active employees, with the fields needed to match an extracted ClickUp
+ * owner nickname (full_name / nick_name) and to scope by department.
+ */
+export async function getEmployeeRoster(): Promise<RosterEntry[]> {
   const rows = await prisma.users.findMany({
-    where: {
-      status: "active",
-      employment: { some: { status: "active", department_id: departmentId } },
-    },
+    where: { status: "active" },
     select: {
-      email: true,
-      user_profile: { select: { full_name: true } },
+      user_id: true,
+      user_profile: { select: { full_name: true, nick_name: true } },
+      employment: {
+        where: { status: "active" },
+        take: 1,
+        select: { department_id: true },
+      },
     },
   });
   return rows.map((r) => ({
-    name: r.user_profile?.full_name ?? r.email,
-    email: r.email,
+    userId: r.user_id,
+    fullName: r.user_profile?.full_name ?? "",
+    nickName: r.user_profile?.nick_name ?? null,
+    departmentId: r.employment[0]?.department_id ?? null,
   }));
 }
 
