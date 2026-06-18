@@ -740,13 +740,7 @@ export async function assignCandidateRole(
   // Narrow further: only admin/superadmin can assign roles. canManageInductions
   // (which loadActorAndAuthorize uses) includes "hr" and "od" too, but the
   // spec says Assign Role is admin-only on this page.
-  const session = await auth();
-  if (!session?.user?.email) return { ok: false, error: "Not signed in." };
-  const actorUser = await prisma.users.findUnique({
-    where: { email: session.user.email },
-    select: { role: { select: { role_type: true } } },
-  });
-  const roleType = (actorUser?.role?.role_type ?? "").toLowerCase();
+  const roleType = (auth.actor.role_type ?? "").toLowerCase();
   if (roleType !== "admin" && roleType !== "superadmin") {
     return { ok: false, error: "Only admin / superadmin can assign roles." };
   }
@@ -831,7 +825,7 @@ export async function assignCandidateRole(
         departmentId,
         branchId,
         reportsToUserId,
-        assignedBy: actorUser?.role?.role_type,
+        assignedBy: auth.actor.role_type,
       }),
     );
 

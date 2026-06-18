@@ -1,15 +1,27 @@
-export type RoleType = "superadmin" | "ceo" | "admin" | "staff";
+export type RoleType =
+  | "superadmin"
+  | "ceo"
+  | "admin"
+  | "staff"
+  | "branch"
+  | "hr"
+  | "od"
+  | "hod";
 
-const ROLE_LABEL: Record<string, string> = {
+const ROLE_LABEL: Record<RoleType, string> = {
   superadmin: "Superadmin",
   ceo: "CEO",
   admin: "Admin",
   staff: "Staff",
+  branch: "Branch",
+  hr: "HR",
+  od: "OD",
+  hod: "HOD",
 };
 
 export function formatRoleLabel(role: string | null | undefined): string {
   if (!role) return "User";
-  return ROLE_LABEL[role] ?? role.charAt(0).toUpperCase() + role.slice(1);
+  return (ROLE_LABEL as Record<string, string>)[role] ?? role.charAt(0).toUpperCase() + role.slice(1);
 }
 
 export function getAvatarInitials(nameOrEmail: string | null | undefined): string {
