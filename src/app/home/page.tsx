@@ -35,14 +35,14 @@ export default function HomePage() {
   return (
     <AppShell email={userEmail} role={userRole} name={userName}>
       <HodPendingAlert position={userPosition} />
-      <div className="max-w-7xl mx-auto px-6 pt-6">
-        <OngoingTasksWidget />
-      </div>
       {isStaff ? (
         <EmployeeSelfServiceDashboard userName={userName} userEmail={userEmail} />
       ) : (
         <DashboardHome userRole={userRole} userEmail={userEmail} />
       )}
+      <div className="max-w-7xl mx-auto px-6 pb-10">
+        <OngoingTasksWidget />
+      </div>
     </AppShell>
   );
 }
