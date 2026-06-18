@@ -90,6 +90,27 @@ export function matchOwnerToRoster(
   return word ? word.userId : null;
 }
 
+export interface StatusSlice {
+  status: string;
+  color: string;
+  count: number;
+}
+
+/** Count tasks by status (for a pie chart), using each status's ClickUp color. */
+export function aggregateByStatus(tasks: ClickUpTaskView[]): StatusSlice[] {
+  const map = new Map<string, StatusSlice>();
+  for (const t of tasks) {
+    const status = t.status || "no status";
+    const existing = map.get(status);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      map.set(status, { status, color: t.statusColor || "#94a3b8", count: 1 });
+    }
+  }
+  return [...map.values()].sort((a, b) => b.count - a.count);
+}
+
 export function sortByDueDate(tasks: ClickUpTaskView[]): ClickUpTaskView[] {
   return [...tasks].sort((a, b) => {
     if (a.dueDate === null && b.dueDate === null) return 0;

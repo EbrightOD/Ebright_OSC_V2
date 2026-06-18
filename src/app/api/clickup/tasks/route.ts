@@ -7,6 +7,7 @@ import {
   getOpenTasks,
   matchOwnerToRoster,
   sortByDueDate,
+  aggregateByStatus,
   type ClickUpTaskView,
   type IndividualTasks,
   type OtherBucket,
@@ -97,6 +98,10 @@ export async function GET() {
       departmentName,
       individuals,
       other,
+      // Status distribution across ALL open workspace tasks (for the pie chart),
+      // independent of the per-viewer scoping above.
+      statusBreakdown: aggregateByStatus(tasks),
+      totalTaskCount: tasks.length,
     });
   } catch {
     return NextResponse.json({ error: "Failed to load ClickUp tasks" }, { status: 502 });

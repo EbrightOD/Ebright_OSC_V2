@@ -5,6 +5,7 @@ import {
   extractOwner,
   normalizeName,
   matchOwnerToRoster,
+  aggregateByStatus,
   type ClickUpTaskView,
   type RosterEntry,
 } from "./clickup";
@@ -112,6 +113,26 @@ describe("mapTask", () => {
     expect(view.listName).toBe("");
     expect(view.folderName).toBe("");
     expect(view.ownerName).toBeNull();
+  });
+});
+
+describe("aggregateByStatus", () => {
+  it("counts tasks per status, keeps the status color, sorts by count desc", () => {
+    const result = aggregateByStatus([
+      task({ id: "a", status: "in progress", statusColor: "#abc" }),
+      task({ id: "b", status: "to do", statusColor: "#000" }),
+      task({ id: "c", status: "in progress", statusColor: "#abc" }),
+      task({ id: "d", status: "in progress", statusColor: "#abc" }),
+    ]);
+    expect(result).toEqual([
+      { status: "in progress", color: "#abc", count: 3 },
+      { status: "to do", color: "#000", count: 1 },
+    ]);
+  });
+
+  it("falls back to 'no status' and a default color for blank statuses", () => {
+    const result = aggregateByStatus([task({ id: "a", status: "", statusColor: "" })]);
+    expect(result).toEqual([{ status: "no status", color: "#94a3b8", count: 1 }]);
   });
 });
 
