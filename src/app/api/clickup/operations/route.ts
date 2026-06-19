@@ -8,6 +8,7 @@ import {
   scheduleSection,
   sectionSortKey,
   type ClickUpTaskView,
+  type StatusSlice,
 } from "@/lib/clickup";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +27,8 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
   return results;
 }
 
+interface DayBreakdown { total: number; statusBreakdown: StatusSlice[] }
+
 export async function GET() {
   const session = await getServerSession(authOptions);
   const role = (session?.user as { role?: string } | undefined)?.role;
@@ -37,54 +40,58 @@ export async function GET() {
   if (!token || !teamId) return NextResponse.json({ configured: false });
 
   try {
-    const branches = await getBranchSpaces(teamId, token);
+    const branchSpaces = await getBranchSpaces(teamId, token);
 
-    // Fetch each branch's tasks (cached per space). Bounded concurrency + per-branch
-    // try/catch so one failing/rate-limited branch degrades gracefully.
-    const perBranch = await mapLimit(branches, 3, async (b) => {
+    const perBranch = await mapLimit(branchSpaces, 3, async (b) => {
+      let tasks: ClickUpTaskView[] | null;
       try {
-        return await getSpaceOpenTasks(teamId, b.id, token);
+        tasks = await getSpaceOpenTasks(teamId, b.id, token);
       } catch {
-        return null;
+        tasks = null;
       }
+      return { branch: b, tasks };
     });
-    const loaded = perBranch.filter((t): t is ClickUpTaskView[] => t !== null);
-    const tasks = loaded.flat();
 
-    // Aggregate every branch's tasks by weekday / period section. Folders that
-    // are neither a weekday nor a recognized period (per-coach lists, "hidden",
-    // ad-hoc) collapse into a single "Other" card so the by-day view stays clean.
-    const bySection = new Map<string, ClickUpTaskView[]>();
-    for (const task of tasks) {
-      const label = scheduleSection(task.folderName);
-      const key = sectionSortKey(label)[0] === 3 ? "Other" : label;
-      const list = bySection.get(key) ?? [];
-      list.push(task);
-      bySection.set(key, list);
-    }
+    const sectionSet = new Set<string>();
+    let loadedBranches = 0;
 
-    const sections = [...bySection.entries()]
-      .map(([name, sectionTasks]) => ({
-        name,
-        total: sectionTasks.length,
-        statusBreakdown: aggregateByStatus(sectionTasks),
-      }))
-      .sort((a, b) => {
-        const ra = sectionSortKey(a.name);
-        const rb = sectionSortKey(b.name);
-        for (let i = 0; i < 3; i++) {
-          if (ra[i] < rb[i]) return -1;
-          if (ra[i] > rb[i]) return 1;
+    const branches = perBranch.map(({ branch, tasks }) => {
+      const byDay: Record<string, DayBreakdown> = {};
+      if (tasks) {
+        loadedBranches++;
+        const grouped = new Map<string, ClickUpTaskView[]>();
+        for (const task of tasks) {
+          const label = scheduleSection(task.folderName);
+          // Keep weekdays + recognized periods; collapse the rest into "Other".
+          const key = sectionSortKey(label)[0] === 3 ? "Other" : label;
+          const list = grouped.get(key) ?? [];
+          list.push(task);
+          grouped.set(key, list);
         }
-        return 0;
-      });
+        for (const [label, list] of grouped) {
+          byDay[label] = { total: list.length, statusBreakdown: aggregateByStatus(list) };
+          sectionSet.add(label);
+        }
+      }
+      return { id: branch.id, code: branch.code, name: branch.name, byDay };
+    });
+
+    const sections = [...sectionSet].sort((a, b) => {
+      const ra = sectionSortKey(a);
+      const rb = sectionSortKey(b);
+      for (let i = 0; i < 3; i++) {
+        if (ra[i] < rb[i]) return -1;
+        if (ra[i] > rb[i]) return 1;
+      }
+      return 0;
+    });
 
     return NextResponse.json({
       configured: true,
-      branchCount: branches.length,
-      loadedBranches: loaded.length,
-      totalTaskCount: tasks.length,
+      branchCount: branchSpaces.length,
+      loadedBranches,
       sections,
+      branches,
     });
   } catch {
     return NextResponse.json({ error: "Failed to load operations dashboard" }, { status: 502 });
