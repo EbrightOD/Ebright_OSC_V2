@@ -6,8 +6,10 @@ import {
   normalizeName,
   matchOwnerToRoster,
   aggregateByStatus,
+  matchBranches,
   type ClickUpTaskView,
   type RosterEntry,
+  type BranchRef,
 } from "./clickup";
 
 function task(partial: Partial<ClickUpTaskView> & { id: string }): ClickUpTaskView {
@@ -133,6 +135,29 @@ describe("aggregateByStatus", () => {
   it("falls back to 'no status' and a default color for blank statuses", () => {
     const result = aggregateByStatus([task({ id: "a", status: "", statusColor: "" })]);
     expect(result).toEqual([{ status: "no status", color: "#94a3b8", count: 1 }]);
+  });
+});
+
+describe("matchBranches", () => {
+  const branches: BranchRef[] = [
+    { name: "HQ", code: "HQ" },
+    { name: "Online", code: "ONL" },
+    { name: "Klang", code: "KLG" },
+    { name: "Setia Alam", code: "SA" },
+  ];
+
+  it("matches a branch name as a substring", () => {
+    expect(matchBranches("Content for Klang and Online", branches)).toEqual(["Online", "Klang"]);
+  });
+
+  it("matches a branch code as a standalone token, not inside words", () => {
+    expect(matchBranches("KLG PIC weekly report", branches)).toEqual(["Klang"]);
+    expect(matchBranches("Saturday class", branches)).toEqual([]); // 'SA' not a standalone token
+  });
+
+  it("can match multiple branches and returns [] for none", () => {
+    expect(matchBranches("HQ briefing", branches)).toEqual(["HQ"]);
+    expect(matchBranches("general admin task", branches)).toEqual([]);
   });
 });
 

@@ -96,6 +96,29 @@ export interface StatusSlice {
   count: number;
 }
 
+export interface BranchRef {
+  name: string;
+  code: string | null;
+}
+
+/**
+ * Find which branches a task's text mentions: branch name as a substring (names
+ * longer than 3 chars), or branch code as a standalone token (e.g. "HQ", "KLG").
+ * A task can mention several branches. NOTE: this is title/folder text matching,
+ * not a structured branch field — ClickUp has none.
+ */
+export function matchBranches(text: string, branches: BranchRef[]): string[] {
+  const lower = (text || "").toLowerCase();
+  const tokens = new Set(lower.split(/[^a-z0-9]+/).filter(Boolean));
+  const out: string[] = [];
+  for (const b of branches) {
+    const nameHit = b.name.length > 3 && lower.includes(b.name.toLowerCase());
+    const codeHit = !!b.code && b.code.length >= 2 && tokens.has(b.code.toLowerCase());
+    if (nameHit || codeHit) out.push(b.name);
+  }
+  return out;
+}
+
 /** Count tasks by status (for a pie chart), using each status's ClickUp color. */
 export function aggregateByStatus(tasks: ClickUpTaskView[]): StatusSlice[] {
   const map = new Map<string, StatusSlice>();

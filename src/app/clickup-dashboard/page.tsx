@@ -1,21 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { redirect } from "next/navigation";
 import AppShell from "@/app/components/AppShell";
 import DonutChart from "@/app/components/DonutChart";
 
 interface StatusSlice { status: string; color: string; count: number }
-interface DepartmentBreakdown { departmentName: string; total: number; statusBreakdown: StatusSlice[] }
+interface BranchBreakdown { branchName: string; total: number; statusBreakdown: StatusSlice[] }
 
 type Payload =
   | { configured: false }
   | {
       configured: true;
       totalTaskCount: number;
-      overall: StatusSlice[];
-      departments: DepartmentBreakdown[];
+      branchRelatedCount: number;
+      branches: BranchBreakdown[];
     };
 
 type State =
@@ -25,21 +25,20 @@ type State =
   | { kind: "error" }
   | { kind: "ready"; data: Extract<Payload, { configured: true }> };
 
-const SYNTHETIC = new Set(["(Unassigned)", "(No department)"]);
 const LEGEND_LIMIT = 6;
 
-function DepartmentCard({ dept }: { dept: DepartmentBreakdown }) {
-  const segments = dept.statusBreakdown.map((s) => ({ label: s.status, value: s.count, color: s.color }));
-  const shown = dept.statusBreakdown.slice(0, LEGEND_LIMIT);
-  const hidden = dept.statusBreakdown.length - shown.length;
+function BranchCard({ branch }: { branch: BranchBreakdown }) {
+  const segments = branch.statusBreakdown.map((s) => ({ label: s.status, value: s.count, color: s.color }));
+  const shown = branch.statusBreakdown.slice(0, LEGEND_LIMIT);
+  const hidden = branch.statusBreakdown.length - shown.length;
 
   return (
     <section className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 transition-shadow hover:shadow-md">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-slate-900 truncate" title={dept.departmentName}>
-          {dept.departmentName}
+        <h3 className="text-sm font-semibold text-slate-900 truncate" title={branch.branchName}>
+          {branch.branchName}
         </h3>
-        <span className="text-xs font-medium text-slate-400 tabular-nums">{dept.total}</span>
+        <span className="text-xs font-medium text-slate-400 tabular-nums">{branch.total}</span>
       </div>
 
       <div className="flex items-center gap-5">
@@ -50,7 +49,7 @@ function DepartmentCard({ dept }: { dept: DepartmentBreakdown }) {
               <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} aria-hidden="true" />
               <span className="text-slate-600 truncate capitalize">{s.status}</span>
               <span className="ml-auto tabular-nums text-slate-400 shrink-0">
-                {s.count} · {Math.round((s.count / dept.total) * 100)}%
+                {s.count} · {Math.round((s.count / branch.total) * 100)}%
               </span>
             </li>
           ))}
@@ -84,14 +83,6 @@ export default function ClickUpDashboardPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Real departments first (by volume), synthetic buckets last.
-  const ordered = useMemo(() => {
-    if (state.kind !== "ready") return [];
-    const real = state.data.departments.filter((d) => !SYNTHETIC.has(d.departmentName));
-    const synthetic = state.data.departments.filter((d) => SYNTHETIC.has(d.departmentName));
-    return [...real, ...synthetic];
-  }, [state]);
-
   if (status === "loading") {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 text-blue-600 font-semibold text-lg">
@@ -109,11 +100,11 @@ export default function ClickUpDashboardPage() {
       <div className="min-h-full bg-slate-50">
         <div className="max-w-7xl mx-auto px-6 py-10">
           <header className="mb-8">
-            <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">ClickUp Monitoring</h1>
+            <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">ClickUp — Branch Tasks</h1>
             <p className="mt-1 text-sm text-slate-500">
-              Open tasks by status across departments
+              Open tasks by status, grouped by branch
               {state.kind === "ready" && (
-                <> · <span className="font-medium text-slate-700">{state.data.totalTaskCount.toLocaleString()}</span> total</>
+                <> · <span className="font-medium text-slate-700">{state.data.branchRelatedCount.toLocaleString()}</span> branch-related of {state.data.totalTaskCount.toLocaleString()} total</>
               )}
             </p>
           </header>
@@ -151,10 +142,20 @@ export default function ClickUpDashboardPage() {
             </div>
           )}
 
-          {state.kind === "ready" && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
-              {ordered.map((dept) => <DepartmentCard key={dept.departmentName} dept={dept} />)}
-            </div>
+          {state.kind === "ready" && state.data.branches.length === 0 && (
+            <p className="text-slate-500">No branch-related tasks found.</p>
+          )}
+
+          {state.kind === "ready" && state.data.branches.length > 0 && (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+                {state.data.branches.map((branch) => <BranchCard key={branch.branchName} branch={branch} />)}
+              </div>
+              <p className="mt-6 text-xs text-slate-400">
+                Branch is inferred from branch names/codes in the task title, list, or folder — ClickUp has no
+                branch field, so a task that names several branches is counted under each.
+              </p>
+            </>
           )}
         </div>
       </div>

@@ -3,16 +3,13 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/nextauth";
 import {
   getOpenTasks,
-  matchOwnerToRoster,
+  matchBranches,
   aggregateByStatus,
   type ClickUpTaskView,
 } from "@/lib/clickup";
-import { getEmployeeRoster, getDepartments } from "@/lib/clickup-queries";
+import { getBranches } from "@/lib/clickup-queries";
 
 export const dynamic = "force-dynamic";
-
-const NO_DEPARTMENT = "(No department)";
-const UNASSIGNED = "(Unassigned)";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -31,45 +28,35 @@ export async function GET() {
   }
 
   try {
-    const [roster, departments, tasks] = await Promise.all([
-      getEmployeeRoster(),
-      getDepartments(),
-      getOpenTasks(teamId, token),
-    ]);
+    const [branches, tasks] = await Promise.all([getBranches(), getOpenTasks(teamId, token)]);
 
-    const deptIdToName = new Map(departments.map((d) => [d.id, d.name]));
-    const userIdToDeptId = new Map(roster.map((r) => [r.userId, r.departmentId]));
-
-    // Group every task under a department (via its matched owner), or the
-    // (No department) / (Unassigned) buckets, then aggregate status per group.
-    const tasksByDept = new Map<string, ClickUpTaskView[]>();
+    // A task is "branch-related" if its text mentions a branch. One task can
+    // mention several branches, so it can appear under more than one card.
+    const tasksByBranch = new Map<string, ClickUpTaskView[]>();
+    const branchRelated = new Set<string>();
     for (const task of tasks) {
-      const ownerUserId = matchOwnerToRoster(task.ownerName, roster);
-      let key: string;
-      if (ownerUserId !== null) {
-        const deptId = userIdToDeptId.get(ownerUserId) ?? null;
-        key = deptId !== null ? deptIdToName.get(deptId) ?? `Dept ${deptId}` : NO_DEPARTMENT;
-      } else {
-        key = UNASSIGNED;
+      const text = `${task.name} ${task.listName} ${task.folderName}`;
+      for (const branchName of matchBranches(text, branches)) {
+        const list = tasksByBranch.get(branchName) ?? [];
+        list.push(task);
+        tasksByBranch.set(branchName, list);
+        branchRelated.add(task.id);
       }
-      const list = tasksByDept.get(key) ?? [];
-      list.push(task);
-      tasksByDept.set(key, list);
     }
 
-    const departmentBreakdowns = [...tasksByDept.entries()]
-      .map(([departmentName, deptTasks]) => ({
-        departmentName,
-        total: deptTasks.length,
-        statusBreakdown: aggregateByStatus(deptTasks),
+    const branchBreakdowns = [...tasksByBranch.entries()]
+      .map(([branchName, branchTasks]) => ({
+        branchName,
+        total: branchTasks.length,
+        statusBreakdown: aggregateByStatus(branchTasks),
       }))
       .sort((a, b) => b.total - a.total);
 
     return NextResponse.json({
       configured: true,
       totalTaskCount: tasks.length,
-      overall: aggregateByStatus(tasks),
-      departments: departmentBreakdowns,
+      branchRelatedCount: branchRelated.size,
+      branches: branchBreakdowns,
     });
   } catch {
     return NextResponse.json({ error: "Failed to load ClickUp dashboard" }, { status: 502 });
