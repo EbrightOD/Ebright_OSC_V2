@@ -137,6 +137,14 @@ describe("aggregateByStatus", () => {
     const result = aggregateByStatus([task({ id: "a", status: "", statusColor: "" })]);
     expect(result).toEqual([{ status: "no status", color: "#94a3b8", count: 1 }]);
   });
+
+  it("forces completed statuses to light green, ignoring ClickUp's color", () => {
+    const result = aggregateByStatus([
+      task({ id: "a", status: "complete", statusColor: "#0b6b2f" }),
+      task({ id: "b", status: "Done", statusColor: "#114411" }),
+    ]);
+    expect(result.every((s) => s.color === "#86efac")).toBe(true);
+  });
 });
 
 describe("parseBranchSpace", () => {

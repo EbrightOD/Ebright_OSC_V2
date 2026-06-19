@@ -135,6 +135,15 @@ export interface StatusSlice {
 }
 
 /** Count tasks by status (for a pie chart), using each status's ClickUp color. */
+/** Completed statuses are forced to light green for an at-a-glance read. */
+const COMPLETED_STATUS = /complete|done/i;
+const COMPLETED_COLOR = "#86efac"; // tailwind green-300
+
+export function statusColor(status: string, rawColor: string): string {
+  if (COMPLETED_STATUS.test(status)) return COMPLETED_COLOR;
+  return rawColor || "#94a3b8";
+}
+
 export function aggregateByStatus(tasks: ClickUpTaskView[]): StatusSlice[] {
   const map = new Map<string, StatusSlice>();
   for (const t of tasks) {
@@ -143,7 +152,7 @@ export function aggregateByStatus(tasks: ClickUpTaskView[]): StatusSlice[] {
     if (existing) {
       existing.count += 1;
     } else {
-      map.set(status, { status, color: t.statusColor || "#94a3b8", count: 1 });
+      map.set(status, { status, color: statusColor(status, t.statusColor), count: 1 });
     }
   }
   return [...map.values()].sort((a, b) => b.count - a.count);
