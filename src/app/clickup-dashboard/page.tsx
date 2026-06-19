@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { redirect } from "next/navigation";
 import AppShell from "@/app/components/AppShell";
-import PieChart from "@/app/components/PieChart";
+import ClickUpStatusPie from "@/app/components/ClickUpStatusPie";
 
 interface StatusSlice { status: string; color: string; count: number }
 interface DepartmentBreakdown { departmentName: string; total: number; statusBreakdown: StatusSlice[] }
@@ -99,12 +99,12 @@ export default function ClickUpDashboardPage() {
         {state.kind === "ready" && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {state.data.departments.map((dept) => (
-              <section key={dept.departmentName} className="bg-white rounded-lg border border-slate-200 shadow-sm p-6">
-                <div className="flex items-baseline justify-between mb-5">
-                  <h2 className="text-base font-semibold text-slate-900">{dept.departmentName}</h2>
+              <section key={dept.departmentName} className="bg-[#16161b] rounded-xl border border-zinc-800 shadow-sm p-6">
+                <div className="flex items-baseline justify-between mb-6">
+                  <h2 className="text-base font-semibold text-white">{dept.departmentName}</h2>
                   <span className="text-xs text-slate-400">{dept.total} tasks</span>
                 </div>
-                <PieChart data={toSlices(dept.statusBreakdown)} size={200} legend="bottom" />
+                <ClickUpStatusPie data={toSlices(dept.statusBreakdown)} />
               </section>
             ))}
           </div>
