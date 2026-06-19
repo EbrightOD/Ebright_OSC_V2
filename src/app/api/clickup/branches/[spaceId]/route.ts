@@ -5,26 +5,12 @@ import {
   getBranchSpaces,
   getSpaceOpenTasks,
   aggregateByStatus,
+  scheduleSection,
+  sectionSortKey,
   type ClickUpTaskView,
 } from "@/lib/clickup";
 
 export const dynamic = "force-dynamic";
-
-const DAY: Record<string, number> = { mon: 1, tue: 2, wed: 3, thu: 4, thur: 4, fri: 5, sat: 6, sun: 7 };
-const ROLE: Record<string, number> = { manager: 1, executive: 2, coach: 3 };
-
-/** Sort key so sections read in schedule order: weekdays (by role), then weekly/monthly/etc. */
-function sectionRank(name: string): [number, number, number, string] {
-  const lower = name.toLowerCase();
-  const num = lower.match(/^(\d+)\s*\|/);
-  if (num) return [2, parseInt(num[1], 10), 0, lower];
-  const day = lower.match(/^(mon|tue|wed|thur|thu|fri|sat|sun)\b/);
-  if (day) {
-    const roleKey = Object.keys(ROLE).find((r) => lower.includes(r));
-    return [1, DAY[day[1]] ?? 9, roleKey ? ROLE[roleKey] : 4, lower];
-  }
-  return [3, 0, 0, lower];
-}
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ spaceId: string }> }) {
   const { spaceId } = await params;
@@ -44,24 +30,26 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ spa
 
     const tasks = await getSpaceOpenTasks(teamId, spaceId, token);
 
-    const byFolder = new Map<string, ClickUpTaskView[]>();
+    // Aggregate day folders (e.g. "Wed | Executive", "Wed | Manager") into a
+    // single weekday section ("Wednesday"); period folders into their label.
+    const bySection = new Map<string, ClickUpTaskView[]>();
     for (const task of tasks) {
-      const key = task.folderName || "Other";
-      const list = byFolder.get(key) ?? [];
+      const key = scheduleSection(task.folderName);
+      const list = bySection.get(key) ?? [];
       list.push(task);
-      byFolder.set(key, list);
+      bySection.set(key, list);
     }
 
-    const sections = [...byFolder.entries()]
+    const sections = [...bySection.entries()]
       .map(([name, sectionTasks]) => ({
         name,
         total: sectionTasks.length,
         statusBreakdown: aggregateByStatus(sectionTasks),
       }))
       .sort((a, b) => {
-        const ra = sectionRank(a.name);
-        const rb = sectionRank(b.name);
-        for (let i = 0; i < 4; i++) {
+        const ra = sectionSortKey(a.name);
+        const rb = sectionSortKey(b.name);
+        for (let i = 0; i < 3; i++) {
           if (ra[i] < rb[i]) return -1;
           if (ra[i] > rb[i]) return 1;
         }

@@ -61,6 +61,44 @@ export function extractOwner(folderName: string | null | undefined): string | nu
   return null;
 }
 
+const DAY_FULL: Record<string, string> = {
+  mon: "Monday",
+  tue: "Tuesday",
+  wed: "Wednesday",
+  thu: "Thursday",
+  thur: "Thursday",
+  fri: "Friday",
+  sat: "Saturday",
+  sun: "Sunday",
+};
+const WEEKDAY_ORDER: Record<string, number> = {
+  Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6, Sunday: 7,
+};
+const PERIOD_ORDER = ["weekly", "daily", "month", "quarter", "year"];
+
+/**
+ * Collapse a ClickUp folder name into a schedule section, so day folders
+ * ("Wed | Executive", "Wed | Manager") aggregate into one weekday ("Wednesday").
+ * Numbered period folders ("03 | Monthly") become their label ("Monthly").
+ */
+export function scheduleSection(folderName: string): string {
+  const lower = (folderName || "").trim().toLowerCase();
+  const day = lower.match(/^(mon|tue|wed|thur|thu|fri|sat|sun)\b/);
+  if (day) return DAY_FULL[day[1]];
+  const num = (folderName || "").match(/^\d+\s*\|\s*(.+)$/);
+  if (num) return num[1].trim();
+  return folderName || "Other";
+}
+
+/** Sort key so sections read in schedule order: weekdays, then weekly→yearly periods. */
+export function sectionSortKey(label: string): [number, number, string] {
+  if (WEEKDAY_ORDER[label]) return [1, WEEKDAY_ORDER[label], label];
+  const lower = label.toLowerCase();
+  const p = PERIOD_ORDER.findIndex((k) => lower.includes(k));
+  if (p !== -1) return [2, p, label];
+  return [3, 0, label];
+}
+
 export function normalizeName(s: string | null | undefined): string {
   return (s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
 }

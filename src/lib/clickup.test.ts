@@ -7,6 +7,8 @@ import {
   matchOwnerToRoster,
   aggregateByStatus,
   parseBranchSpace,
+  scheduleSection,
+  sectionSortKey,
   type ClickUpTaskView,
   type RosterEntry,
 } from "./clickup";
@@ -156,6 +158,39 @@ describe("parseBranchSpace", () => {
     expect(parseBranchSpace("4", "HQ | 3.0 Optimisation (Iqbal)")).toBeNull();
     expect(parseBranchSpace("5", "B00 | Branch Template (2026)")).toBeNull();
     expect(parseBranchSpace("6", "Ebright Carnival 2024 (Athirah)")).toBeNull();
+  });
+});
+
+describe("scheduleSection", () => {
+  it("aggregates day folders into a weekday, regardless of role suffix", () => {
+    expect(scheduleSection("Wed | Executive")).toBe("Wednesday");
+    expect(scheduleSection("Wed | Manager")).toBe("Wednesday");
+    expect(scheduleSection("Thur | Coach")).toBe("Thursday");
+    expect(scheduleSection("Sun | Executive")).toBe("Sunday");
+  });
+  it("turns a numbered period folder into its label and never mistakes Monthly for Monday", () => {
+    expect(scheduleSection("01 | Weekly & Daily")).toBe("Weekly & Daily");
+    expect(scheduleSection("03 | Monthly")).toBe("Monthly");
+    expect(scheduleSection("Monthly")).toBe("Monthly"); // not "Monday"
+  });
+  it("falls back to the folder name", () => {
+    expect(scheduleSection("Ad-hoc")).toBe("Ad-hoc");
+  });
+});
+
+describe("sectionSortKey", () => {
+  it("orders weekdays before periods, in schedule order", () => {
+    const labels = ["Monthly", "Sunday", "Wednesday", "Weekly & Daily", "Yearly"];
+    const sorted = [...labels].sort((a, b) => {
+      const ra = sectionSortKey(a);
+      const rb = sectionSortKey(b);
+      for (let i = 0; i < 3; i++) {
+        if (ra[i] < rb[i]) return -1;
+        if (ra[i] > rb[i]) return 1;
+      }
+      return 0;
+    });
+    expect(sorted).toEqual(["Wednesday", "Sunday", "Weekly & Daily", "Monthly", "Yearly"]);
   });
 });
 
