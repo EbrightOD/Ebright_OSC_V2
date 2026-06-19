@@ -97,28 +97,17 @@ export default function ClickUpDashboardPage() {
         )}
 
         {state.kind === "ready" && (
-          <>
-            <section className="bg-white rounded-lg border border-slate-200 shadow-sm p-6 mb-8">
-              <div className="flex items-baseline justify-between mb-4">
-                <h2 className="text-base font-semibold text-slate-900">All tasks by status</h2>
-                <span className="text-xs text-slate-400">{state.data.totalTaskCount} total</span>
-              </div>
-              <PieChart data={toSlices(state.data.overall)} size={180} />
-            </section>
-
-            <h2 className="text-lg font-semibold text-slate-800 mb-4">By department</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {state.data.departments.map((dept) => (
-                <section key={dept.departmentName} className="bg-white rounded-lg border border-slate-200 shadow-sm p-5">
-                  <div className="flex items-baseline justify-between mb-3">
-                    <h3 className="text-sm font-semibold text-slate-900">{dept.departmentName}</h3>
-                    <span className="text-xs text-slate-400">{dept.total} tasks</span>
-                  </div>
-                  <PieChart data={toSlices(dept.statusBreakdown)} size={130} />
-                </section>
-              ))}
-            </div>
-          </>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {state.data.departments.map((dept) => (
+              <section key={dept.departmentName} className="bg-white rounded-lg border border-slate-200 shadow-sm p-6">
+                <div className="flex items-baseline justify-between mb-5">
+                  <h2 className="text-base font-semibold text-slate-900">{dept.departmentName}</h2>
+                  <span className="text-xs text-slate-400">{dept.total} tasks</span>
+                </div>
+                <PieChart data={toSlices(dept.statusBreakdown)} size={200} legend="bottom" />
+              </section>
+            ))}
+          </div>
         )}
       </div>
     </AppShell>
