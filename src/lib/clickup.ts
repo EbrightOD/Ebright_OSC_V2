@@ -213,26 +213,27 @@ export async function getBranchSpaces(teamId: string, token: string): Promise<Br
 }
 
 /**
- * Fetch every open task across all pages, optionally scoped to a single space.
- * ClickUp paginates at 100 tasks/page and reports `last_page`; we loop until it's
- * true (or a page is empty). A MAX_PAGES guard bounds runaway loops.
+ * Fetch every task across all pages, optionally scoped to a single space and
+ * optionally including closed/completed tasks. ClickUp paginates at 100/page and
+ * reports `last_page`; we loop until it's true (or a page is empty). A MAX_PAGES
+ * guard bounds runaway loops.
  */
-async function fetchAllOpenTasks(
+async function fetchAllTasks(
   teamId: string,
   token: string,
-  spaceId?: string,
+  opts: { spaceId?: string; includeClosed?: boolean } = {},
 ): Promise<ClickUpTaskView[]> {
   const MAX_PAGES = 50; // 5000 tasks — a safety bound, not an expected limit
   const all: ClickUpTaskView[] = [];
 
   for (let page = 0; page < MAX_PAGES; page++) {
     const params = new URLSearchParams({
-      include_closed: "false",
+      include_closed: opts.includeClosed ? "true" : "false",
       subtasks: "true",
       order_by: "due_date",
       page: String(page),
     });
-    if (spaceId) params.append("space_ids[]", spaceId);
+    if (opts.spaceId) params.append("space_ids[]", opts.spaceId);
     const res = await fetch(`${CLICKUP_API_BASE}/team/${teamId}/task?${params.toString()}`, {
       headers: { Authorization: token },
       cache: "no-store",
@@ -292,16 +293,21 @@ async function getCachedTasks(
   }
 }
 
-/** All open tasks in the workspace (10-min cache). */
+/** All OPEN tasks in the workspace (10-min cache). Used by the My Tasks page. */
 export async function getOpenTasks(teamId: string, token: string): Promise<ClickUpTaskView[]> {
-  return getCachedTasks(`team:${teamId}`, () => fetchAllOpenTasks(teamId, token));
+  return getCachedTasks(`team:${teamId}`, () => fetchAllTasks(teamId, token));
 }
 
-/** All open tasks in one branch space (10-min cache, per space). */
-export async function getSpaceOpenTasks(
+/**
+ * All tasks in one branch space INCLUDING completed/closed (10-min cache), so the
+ * branch dashboards show complete vs pending. Keyed separately from open-only.
+ */
+export async function getSpaceTasks(
   teamId: string,
   spaceId: string,
   token: string,
 ): Promise<ClickUpTaskView[]> {
-  return getCachedTasks(`space:${spaceId}`, () => fetchAllOpenTasks(teamId, token, spaceId));
+  return getCachedTasks(`space:${spaceId}:all`, () =>
+    fetchAllTasks(teamId, token, { spaceId, includeClosed: true }),
+  );
 }

@@ -109,7 +109,7 @@ export default function BranchDashboardPage() {
             </h1>
             {state.kind === "ready" && (
               <p className="mt-1 text-sm text-slate-500">
-                <span className="font-medium text-slate-700">{state.data.totalTaskCount.toLocaleString()}</span> open tasks across {state.data.sections.length} sections
+                <span className="font-medium text-slate-700">{state.data.totalTaskCount.toLocaleString()}</span> tasks across {state.data.sections.length} sections
               </p>
             )}
           </header>
@@ -138,7 +138,7 @@ export default function BranchDashboardPage() {
             </div>
           )}
 
-          {state.kind === "ready" && state.data.sections.length === 0 && <p className="text-slate-500">No open tasks in this branch.</p>}
+          {state.kind === "ready" && state.data.sections.length === 0 && <p className="text-slate-500">No tasks in this branch.</p>}
 
           {state.kind === "ready" && state.data.sections.length > 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">

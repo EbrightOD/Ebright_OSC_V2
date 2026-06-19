@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/nextauth";
 import {
   getBranchSpaces,
-  getSpaceOpenTasks,
+  getSpaceTasks,
   aggregateByStatus,
   scheduleSection,
   sectionSortKey,
@@ -28,7 +28,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ spa
     const branch = branches.find((b) => b.id === spaceId);
     if (!branch) return NextResponse.json({ error: "Branch not found" }, { status: 404 });
 
-    const tasks = await getSpaceOpenTasks(teamId, spaceId, token);
+    const tasks = await getSpaceTasks(teamId, spaceId, token);
 
     // Aggregate day folders (e.g. "Wed | Executive", "Wed | Manager") into a
     // single weekday section ("Wednesday"); period folders into their label.

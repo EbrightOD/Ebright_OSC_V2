@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/nextauth";
 import {
   getBranchSpaces,
-  getSpaceOpenTasks,
+  getSpaceTasks,
   aggregateByStatus,
   scheduleSection,
   sectionSortKey,
@@ -45,7 +45,7 @@ export async function GET() {
     const perBranch = await mapLimit(branchSpaces, 3, async (b) => {
       let tasks: ClickUpTaskView[] | null;
       try {
-        tasks = await getSpaceOpenTasks(teamId, b.id, token);
+        tasks = await getSpaceTasks(teamId, b.id, token);
       } catch {
         tasks = null;
       }
