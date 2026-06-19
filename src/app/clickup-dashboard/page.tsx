@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import AppShell from "@/app/components/AppShell";
 
-interface Branch { id: string; code: string; name: string; dashboardUrl: string | null }
+interface Branch { id: string; code: string; name: string }
 
 type Payload = { configured: false } | { configured: true; branches: Branch[] };
 
@@ -78,53 +79,26 @@ export default function ClickUpDashboardPage() {
           )}
 
           {state.kind === "ready" && (
-            <>
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm divide-y divide-slate-100 overflow-hidden">
-                {state.branches.map((b) => {
-                  const inner = (
-                    <>
-                      <span className="inline-flex items-center justify-center w-12 shrink-0 text-xs font-bold text-indigo-600 bg-indigo-50 rounded-md py-1">
-                        {b.code}
-                      </span>
-                      <span className="flex-1 text-sm font-medium text-slate-800 group-hover:text-indigo-600 truncate">
-                        Ebright | {b.code} | {b.name}
-                      </span>
-                      {b.dashboardUrl ? (
-                        <span className="inline-flex items-center gap-1 text-xs text-slate-400 group-hover:text-indigo-500 shrink-0">
-                          Open in ClickUp
-                          <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                            <path d="M11 3a1 1 0 1 0 0 2h2.586l-6.293 6.293a1 1 0 1 0 1.414 1.414L15 6.414V9a1 1 0 1 0 2 0V4a1 1 0 0 0-1-1h-5Z" />
-                            <path d="M5 5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-3a1 1 0 1 0-2 0v3H5V7h3a1 1 0 0 0 0-2H5Z" />
-                          </svg>
-                        </span>
-                      ) : (
-                        <span className="text-xs text-slate-300 shrink-0">link not set</span>
-                      )}
-                    </>
-                  );
-                  return b.dashboardUrl ? (
-                    <a
-                      key={b.id}
-                      href={b.dashboardUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-3 px-5 py-4 hover:bg-slate-50 transition-colors cursor-pointer group"
-                    >
-                      {inner}
-                    </a>
-                  ) : (
-                    <div key={b.id} className="flex items-center gap-3 px-5 py-4 opacity-60">
-                      {inner}
-                    </div>
-                  );
-                })}
-                {state.branches.length === 0 && <p className="px-5 py-6 text-sm text-slate-500">No branch dashboards found.</p>}
-              </div>
-              <p className="mt-4 text-xs text-slate-400">
-                Dashboards open in ClickUp (they can&apos;t be embedded). Branches marked &ldquo;link not set&rdquo;
-                need their ClickUp dashboard URL added to the config.
-              </p>
-            </>
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm divide-y divide-slate-100 overflow-hidden">
+              {state.branches.map((b) => (
+                <Link
+                  key={b.id}
+                  href={`/clickup-dashboard/${b.id}`}
+                  className="flex items-center gap-3 px-5 py-4 hover:bg-slate-50 transition-colors cursor-pointer group"
+                >
+                  <span className="inline-flex items-center justify-center w-12 shrink-0 text-xs font-bold text-indigo-600 bg-indigo-50 rounded-md py-1">
+                    {b.code}
+                  </span>
+                  <span className="flex-1 text-sm font-medium text-slate-800 group-hover:text-indigo-600 truncate">
+                    Ebright | {b.code} | {b.name}
+                  </span>
+                  <svg className="w-4 h-4 text-slate-300 group-hover:text-indigo-500 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 0 1 .02-1.06L11.168 10 7.23 6.29a.75.75 0 1 1 1.04-1.08l4.5 4.25a.75.75 0 0 1 0 1.08l-4.5 4.25a.75.75 0 0 1-1.06-.02Z" clipRule="evenodd" />
+                  </svg>
+                </Link>
+              ))}
+              {state.branches.length === 0 && <p className="px-5 py-6 text-sm text-slate-500">No branch dashboards found.</p>}
+            </div>
           )}
         </div>
       </div>
