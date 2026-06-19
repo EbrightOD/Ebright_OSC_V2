@@ -6,10 +6,9 @@ import {
   normalizeName,
   matchOwnerToRoster,
   aggregateByStatus,
-  matchBranches,
+  parseBranchSpace,
   type ClickUpTaskView,
   type RosterEntry,
-  type BranchRef,
 } from "./clickup";
 
 function task(partial: Partial<ClickUpTaskView> & { id: string }): ClickUpTaskView {
@@ -138,26 +137,25 @@ describe("aggregateByStatus", () => {
   });
 });
 
-describe("matchBranches", () => {
-  const branches: BranchRef[] = [
-    { name: "HQ", code: "HQ" },
-    { name: "Online", code: "ONL" },
-    { name: "Klang", code: "KLG" },
-    { name: "Setia Alam", code: "SA" },
-  ];
-
-  it("matches a branch name as a substring", () => {
-    expect(matchBranches("Content for Klang and Online", branches)).toEqual(["Online", "Klang"]);
+describe("parseBranchSpace", () => {
+  it("parses code + name from a branch space, dropping the manager suffix", () => {
+    expect(parseBranchSpace("1", "B20 | Kajang TTDI Grove (Huda)")).toEqual({
+      id: "1",
+      code: "B20",
+      name: "Kajang TTDI Grove",
+    });
+    expect(parseBranchSpace("2", "B02 | Online (Ummu)")).toEqual({ id: "2", code: "B02", name: "Online" });
+    expect(parseBranchSpace("3", "B21 | Tropicana Sungai Buloh")).toEqual({
+      id: "3",
+      code: "B21",
+      name: "Tropicana Sungai Buloh",
+    });
   });
 
-  it("matches a branch code as a standalone token, not inside words", () => {
-    expect(matchBranches("KLG PIC weekly report", branches)).toEqual(["Klang"]);
-    expect(matchBranches("Saturday class", branches)).toEqual([]); // 'SA' not a standalone token
-  });
-
-  it("can match multiple branches and returns [] for none", () => {
-    expect(matchBranches("HQ briefing", branches)).toEqual(["HQ"]);
-    expect(matchBranches("general admin task", branches)).toEqual([]);
+  it("returns null for non-branch spaces and B00 templates", () => {
+    expect(parseBranchSpace("4", "HQ | 3.0 Optimisation (Iqbal)")).toBeNull();
+    expect(parseBranchSpace("5", "B00 | Branch Template (2026)")).toBeNull();
+    expect(parseBranchSpace("6", "Ebright Carnival 2024 (Athirah)")).toBeNull();
   });
 });
 

@@ -96,29 +96,6 @@ export interface StatusSlice {
   count: number;
 }
 
-export interface BranchRef {
-  name: string;
-  code: string | null;
-}
-
-/**
- * Find which branches a task's text mentions: branch name as a substring (names
- * longer than 3 chars), or branch code as a standalone token (e.g. "HQ", "KLG").
- * A task can mention several branches. NOTE: this is title/folder text matching,
- * not a structured branch field — ClickUp has none.
- */
-export function matchBranches(text: string, branches: BranchRef[]): string[] {
-  const lower = (text || "").toLowerCase();
-  const tokens = new Set(lower.split(/[^a-z0-9]+/).filter(Boolean));
-  const out: string[] = [];
-  for (const b of branches) {
-    const nameHit = b.name.length > 3 && lower.includes(b.name.toLowerCase());
-    const codeHit = !!b.code && b.code.length >= 2 && tokens.has(b.code.toLowerCase());
-    if (nameHit || codeHit) out.push(b.name);
-  }
-  return out;
-}
-
 /** Count tasks by status (for a pie chart), using each status's ClickUp color. */
 export function aggregateByStatus(tasks: ClickUpTaskView[]): StatusSlice[] {
   const map = new Map<string, StatusSlice>();
@@ -159,14 +136,54 @@ export function mapTask(raw: RawTask): ClickUpTaskView {
   };
 }
 
-// ---- Fetch helper (manually verified) ----
+// ---- Branch spaces ----
+
+export interface BranchSpace {
+  id: string;
+  code: string;
+  name: string;
+}
 
 /**
- * Fetch every open task in the workspace, across all pages. ClickUp paginates the
- * filtered team-tasks endpoint at 100 tasks/page and reports `last_page`; we loop
- * until it's true (or a page is empty). A MAX_PAGES guard bounds runaway loops.
+ * Branch spaces are named "B20 | Kajang TTDI Grove (Huda)". Parse the code and
+ * branch name; returns null for non-branch spaces (HQ, events, templates).
  */
-async function fetchAllOpenTasks(teamId: string, token: string): Promise<ClickUpTaskView[]> {
+export function parseBranchSpace(id: string, spaceName: string): BranchSpace | null {
+  const m = (spaceName || "").match(/^(B\d{2})\s*\|\s*([^(]+?)(?:\s*\(.*\))?\s*$/);
+  if (!m) return null;
+  const code = m[1];
+  if (code === "B00") return null; // templates / ARM, not a real branch
+  return { id, code, name: m[2].trim() };
+}
+
+// ---- Fetch helpers (manually verified) ----
+
+interface RawSpace { id: string; name: string }
+
+/** All branch spaces in the workspace (B01..Bnn), sorted by code. */
+export async function getBranchSpaces(teamId: string, token: string): Promise<BranchSpace[]> {
+  const res = await fetch(`${CLICKUP_API_BASE}/team/${teamId}/space?archived=false`, {
+    headers: { Authorization: token },
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`ClickUp spaces fetch failed: ${res.status}`);
+  const data = (await res.json()) as { spaces: RawSpace[] };
+  return data.spaces
+    .map((s) => parseBranchSpace(s.id, s.name))
+    .filter((b): b is BranchSpace => b !== null)
+    .sort((a, b) => a.code.localeCompare(b.code));
+}
+
+/**
+ * Fetch every open task across all pages, optionally scoped to a single space.
+ * ClickUp paginates at 100 tasks/page and reports `last_page`; we loop until it's
+ * true (or a page is empty). A MAX_PAGES guard bounds runaway loops.
+ */
+async function fetchAllOpenTasks(
+  teamId: string,
+  token: string,
+  spaceId?: string,
+): Promise<ClickUpTaskView[]> {
   const MAX_PAGES = 50; // 5000 tasks — a safety bound, not an expected limit
   const all: ClickUpTaskView[] = [];
 
@@ -177,6 +194,7 @@ async function fetchAllOpenTasks(teamId: string, token: string): Promise<ClickUp
       order_by: "due_date",
       page: String(page),
     });
+    if (spaceId) params.append("space_ids[]", spaceId);
     const res = await fetch(`${CLICKUP_API_BASE}/team/${teamId}/task?${params.toString()}`, {
       headers: { Authorization: token },
       cache: "no-store",
@@ -190,36 +208,33 @@ async function fetchAllOpenTasks(teamId: string, token: string): Promise<ClickUp
   return all;
 }
 
-// In-memory cache shared across requests in the long-lived Node server. The
-// workspace has thousands of open tasks, so fetching ~50 pages on every dashboard
-// load would be far too slow; instead we fetch once and serve cached results for
-// CACHE_TTL_MS. The first request after a cold start (or cache expiry) pays the
-// full fetch; subsequent loads are instant. Keyed by teamId.
+// In-memory cache shared across requests in the long-lived Node server. Fetching
+// dozens of pages on every dashboard load would be far too slow, so we fetch once
+// and serve cached results for CACHE_TTL_MS. The first request after a cold start
+// (or expiry) pays the full fetch; subsequent loads are instant. Keyed per scope
+// (whole workspace, or a single space).
 const CACHE_TTL_MS = 10 * 60 * 1000;
 type TaskCache = { at: number; tasks: ClickUpTaskView[]; inFlight: Promise<ClickUpTaskView[]> | null };
-const taskCacheByTeam = new Map<string, TaskCache>();
+const taskCache = new Map<string, TaskCache>();
 
-/**
- * All open tasks in the workspace, served from a 10-minute in-memory cache.
- * Concurrent callers during a refresh share one in-flight fetch (no thundering
- * herd). On a refresh failure, the last good cache is returned if available.
- */
-export async function getOpenTasks(teamId: string, token: string): Promise<ClickUpTaskView[]> {
+async function getCachedTasks(
+  cacheKey: string,
+  fetcher: () => Promise<ClickUpTaskView[]>,
+): Promise<ClickUpTaskView[]> {
   const now = Date.now();
-  let entry = taskCacheByTeam.get(teamId);
+  let entry = taskCache.get(cacheKey);
   if (!entry) {
     entry = { at: 0, tasks: [], inFlight: null };
-    taskCacheByTeam.set(teamId, entry);
+    taskCache.set(cacheKey, entry);
   }
 
-  const fresh = entry.at > 0 && now - entry.at < CACHE_TTL_MS;
-  if (fresh) return entry.tasks;
+  if (entry.at > 0 && now - entry.at < CACHE_TTL_MS) return entry.tasks;
 
   // Coalesce concurrent refreshes into a single fetch.
   let refresh = entry.inFlight;
   if (!refresh) {
     const current = entry;
-    refresh = fetchAllOpenTasks(teamId, token)
+    refresh = fetcher()
       .then((tasks) => {
         current.tasks = tasks;
         current.at = Date.now();
@@ -237,4 +252,18 @@ export async function getOpenTasks(teamId: string, token: string): Promise<Click
     if (entry.at > 0) return entry.tasks; // serve stale on refresh failure
     throw err;
   }
+}
+
+/** All open tasks in the workspace (10-min cache). */
+export async function getOpenTasks(teamId: string, token: string): Promise<ClickUpTaskView[]> {
+  return getCachedTasks(`team:${teamId}`, () => fetchAllOpenTasks(teamId, token));
+}
+
+/** All open tasks in one branch space (10-min cache, per space). */
+export async function getSpaceOpenTasks(
+  teamId: string,
+  spaceId: string,
+  token: string,
+): Promise<ClickUpTaskView[]> {
+  return getCachedTasks(`space:${spaceId}`, () => fetchAllOpenTasks(teamId, token, spaceId));
 }

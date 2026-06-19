@@ -3,62 +3,19 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import AppShell from "@/app/components/AppShell";
-import DonutChart from "@/app/components/DonutChart";
 
-interface StatusSlice { status: string; color: string; count: number }
-interface BranchBreakdown { branchName: string; total: number; statusBreakdown: StatusSlice[] }
+interface Branch { id: string; code: string; name: string }
 
-type Payload =
-  | { configured: false }
-  | {
-      configured: true;
-      totalTaskCount: number;
-      branchRelatedCount: number;
-      branches: BranchBreakdown[];
-    };
+type Payload = { configured: false } | { configured: true; branches: Branch[] };
 
 type State =
   | { kind: "loading" }
   | { kind: "forbidden" }
   | { kind: "notConfigured" }
   | { kind: "error" }
-  | { kind: "ready"; data: Extract<Payload, { configured: true }> };
-
-const LEGEND_LIMIT = 6;
-
-function BranchCard({ branch }: { branch: BranchBreakdown }) {
-  const segments = branch.statusBreakdown.map((s) => ({ label: s.status, value: s.count, color: s.color }));
-  const shown = branch.statusBreakdown.slice(0, LEGEND_LIMIT);
-  const hidden = branch.statusBreakdown.length - shown.length;
-
-  return (
-    <section className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 transition-shadow hover:shadow-md">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-slate-900 truncate" title={branch.branchName}>
-          {branch.branchName}
-        </h3>
-        <span className="text-xs font-medium text-slate-400 tabular-nums">{branch.total}</span>
-      </div>
-
-      <div className="flex items-center gap-5">
-        <DonutChart data={segments} size={120} thickness={13} />
-        <ul className="flex-1 min-w-0 space-y-1.5">
-          {shown.map((s) => (
-            <li key={s.status} className="flex items-center gap-2 text-xs">
-              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} aria-hidden="true" />
-              <span className="text-slate-600 truncate capitalize">{s.status}</span>
-              <span className="ml-auto tabular-nums text-slate-400 shrink-0">
-                {s.count} · {Math.round((s.count / branch.total) * 100)}%
-              </span>
-            </li>
-          ))}
-          {hidden > 0 && <li className="text-xs text-slate-400 pl-[18px]">+{hidden} more</li>}
-        </ul>
-      </div>
-    </section>
-  );
-}
+  | { kind: "ready"; branches: Branch[] };
 
 export default function ClickUpDashboardPage() {
   const { data: session, status } = useSession({
@@ -70,12 +27,12 @@ export default function ClickUpDashboardPage() {
   const load = useCallback(async () => {
     setState({ kind: "loading" });
     try {
-      const res = await fetch("/api/clickup/dashboard", { cache: "no-store" });
+      const res = await fetch("/api/clickup/branches", { cache: "no-store" });
       if (res.status === 403) return setState({ kind: "forbidden" });
       if (!res.ok) return setState({ kind: "error" });
       const data: Payload = await res.json();
       if (!data.configured) return setState({ kind: "notConfigured" });
-      setState({ kind: "ready", data });
+      setState({ kind: "ready", branches: data.branches });
     } catch {
       setState({ kind: "error" });
     }
@@ -98,64 +55,50 @@ export default function ClickUpDashboardPage() {
   return (
     <AppShell email={userEmail} role={userRole} name={userName}>
       <div className="min-h-full bg-slate-50">
-        <div className="max-w-7xl mx-auto px-6 py-10">
+        <div className="max-w-4xl mx-auto px-6 py-10">
           <header className="mb-8">
-            <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">ClickUp — Branch Tasks</h1>
-            <p className="mt-1 text-sm text-slate-500">
-              Open tasks by status, grouped by branch
-              {state.kind === "ready" && (
-                <> · <span className="font-medium text-slate-700">{state.data.branchRelatedCount.toLocaleString()}</span> branch-related of {state.data.totalTaskCount.toLocaleString()} total</>
-              )}
-            </p>
+            <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">ClickUp Dashboards</h1>
+            <p className="mt-1 text-sm text-slate-500">Branch task dashboards, imported from ClickUp</p>
           </header>
 
           {state.kind === "loading" && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+            <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
               {[0, 1, 2, 3, 4, 5].map((i) => (
-                <div key={i} className="bg-white rounded-xl border border-slate-200 p-5">
-                  <div className="h-4 w-24 bg-slate-100 rounded animate-pulse mb-4" />
-                  <div className="flex items-center gap-5">
-                    <div className="w-[120px] h-[120px] rounded-full bg-slate-100 animate-pulse shrink-0" />
-                    <div className="flex-1 space-y-2">
-                      {[0, 1, 2, 3].map((j) => <div key={j} className="h-3 bg-slate-100 rounded animate-pulse" />)}
-                    </div>
-                  </div>
-                </div>
+                <div key={i} className="px-5 py-4"><div className="h-4 w-64 bg-slate-100 rounded animate-pulse" /></div>
               ))}
             </div>
           )}
 
-          {state.kind === "forbidden" && (
-            <p className="text-slate-500">This page is restricted to superadmin accounts.</p>
-          )}
-
-          {state.kind === "notConfigured" && (
-            <p className="text-slate-500">ClickUp is not configured yet.</p>
-          )}
-
+          {state.kind === "forbidden" && <p className="text-slate-500">This page is restricted to superadmin accounts.</p>}
+          {state.kind === "notConfigured" && <p className="text-slate-500">ClickUp is not configured yet.</p>}
           {state.kind === "error" && (
             <div>
-              <p className="text-red-600 mb-3">Couldn&apos;t load the dashboard.</p>
-              <button onClick={load} className="px-4 py-2 rounded-md bg-slate-100 text-slate-700 text-sm hover:bg-slate-200 cursor-pointer transition-colors">
-                Retry
-              </button>
+              <p className="text-red-600 mb-3">Couldn&apos;t load branches.</p>
+              <button onClick={load} className="px-4 py-2 rounded-md bg-slate-100 text-slate-700 text-sm hover:bg-slate-200 cursor-pointer transition-colors">Retry</button>
             </div>
           )}
 
-          {state.kind === "ready" && state.data.branches.length === 0 && (
-            <p className="text-slate-500">No branch-related tasks found.</p>
-          )}
-
-          {state.kind === "ready" && state.data.branches.length > 0 && (
-            <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
-                {state.data.branches.map((branch) => <BranchCard key={branch.branchName} branch={branch} />)}
-              </div>
-              <p className="mt-6 text-xs text-slate-400">
-                Branch is inferred from branch names/codes in the task title, list, or folder — ClickUp has no
-                branch field, so a task that names several branches is counted under each.
-              </p>
-            </>
+          {state.kind === "ready" && (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm divide-y divide-slate-100 overflow-hidden">
+              {state.branches.map((b) => (
+                <Link
+                  key={b.id}
+                  href={`/clickup-dashboard/${b.id}`}
+                  className="flex items-center gap-3 px-5 py-4 hover:bg-slate-50 transition-colors cursor-pointer group"
+                >
+                  <span className="inline-flex items-center justify-center w-12 shrink-0 text-xs font-bold text-indigo-600 bg-indigo-50 rounded-md py-1">
+                    {b.code}
+                  </span>
+                  <span className="flex-1 text-sm font-medium text-slate-800 group-hover:text-indigo-600 truncate">
+                    Ebright | {b.code} | {b.name}
+                  </span>
+                  <svg className="w-4 h-4 text-slate-300 group-hover:text-indigo-500 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 0 1 .02-1.06L11.168 10 7.23 6.29a.75.75 0 1 1 1.04-1.08l4.5 4.25a.75.75 0 0 1 0 1.08l-4.5 4.25a.75.75 0 0 1-1.06-.02Z" clipRule="evenodd" />
+                  </svg>
+                </Link>
+              ))}
+              {state.branches.length === 0 && <p className="px-5 py-6 text-sm text-slate-500">No branch dashboards found.</p>}
+            </div>
           )}
         </div>
       </div>

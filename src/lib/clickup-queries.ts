@@ -26,24 +26,6 @@ export async function getEmployeeRoster(): Promise<RosterEntry[]> {
   }));
 }
 
-/** All branches (name + code), for branch-mention matching. */
-export async function getBranches(): Promise<{ name: string; code: string | null }[]> {
-  const rows = await prisma.branch.findMany({
-    select: { branch_name: true, branch_code: true },
-    orderBy: { branch_name: "asc" },
-  });
-  return rows.map((r) => ({ name: r.branch_name, code: r.branch_code }));
-}
-
-/** All departments (id + name), for company-wide grouping. */
-export async function getDepartments(): Promise<{ id: number; name: string }[]> {
-  const rows = await prisma.department.findMany({
-    select: { department_id: true, department_name: true },
-    orderBy: { department_name: "asc" },
-  });
-  return rows.map((r) => ({ id: r.department_id, name: r.department_name }));
-}
-
 /** Department name for display. */
 export async function getDepartmentName(departmentId: number): Promise<string> {
   const dept = await prisma.department.findUnique({
