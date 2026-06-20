@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import AppShell from "@/app/components/AppShell";
 import DonutChart from "@/app/components/DonutChart";
+import ClickUpTaskListModal, { type DrillTarget } from "@/app/components/ClickUpTaskListModal";
 
 interface StatusSlice { status: string; color: string; count: number }
 interface DayBreakdown { total: number; statusBreakdown: StatusSlice[] }
@@ -28,7 +29,7 @@ type State =
   | { kind: "error" }
   | { kind: "ready"; data: Extract<Payload, { configured: true }> };
 
-function BranchCard({ branch, day }: { branch: Branch; day: string }) {
+function BranchCard({ branch, day, onPick }: { branch: Branch; day: string; onPick: (status: string) => void }) {
   const bd = branch.byDay[day];
   const segments = (bd?.statusBreakdown ?? []).map((s) => ({ label: s.status, value: s.count, color: s.color }));
   return (
@@ -41,15 +42,20 @@ function BranchCard({ branch, day }: { branch: Branch; day: string }) {
       </div>
       {bd && bd.total > 0 ? (
         <div className="flex items-center gap-4">
-          <DonutChart data={segments} size={104} thickness={12} />
+          <DonutChart data={segments} size={104} thickness={12} onSliceClick={onPick} />
           <ul className="flex-1 min-w-0 space-y-1">
             {bd.statusBreakdown.map((s) => (
-              <li key={s.status} className="flex items-center gap-2 text-xs">
-                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} aria-hidden="true" />
-                <span className="text-slate-600 truncate capitalize">{s.status}</span>
-                <span className="ml-auto tabular-nums text-slate-400 shrink-0">
-                  {s.count} · {Math.round((s.count / bd.total) * 100)}%
-                </span>
+              <li key={s.status}>
+                <button
+                  onClick={() => onPick(s.status)}
+                  className="flex w-full items-center gap-2 text-xs rounded px-1 -mx-1 py-0.5 hover:bg-slate-50 cursor-pointer"
+                >
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} aria-hidden="true" />
+                  <span className="text-slate-600 truncate capitalize">{s.status}</span>
+                  <span className="ml-auto tabular-nums text-slate-400 shrink-0">
+                    {s.count} · {Math.round((s.count / bd.total) * 100)}%
+                  </span>
+                </button>
               </li>
             ))}
           </ul>
@@ -68,6 +74,7 @@ export default function OperationsDashboardPage() {
   });
   const [state, setState] = useState<State>({ kind: "loading" });
   const [day, setDay] = useState<string | null>(null);
+  const [drill, setDrill] = useState<DrillTarget | null>(null);
 
   const load = useCallback(async () => {
     setState({ kind: "loading" });
@@ -169,13 +176,29 @@ export default function OperationsDashboardPage() {
 
               {day && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
-                  {branchesForDay.map((b) => <BranchCard key={b.id} branch={b} day={day} />)}
+                  {branchesForDay.map((b) => (
+                    <BranchCard
+                      key={b.id}
+                      branch={b}
+                      day={day}
+                      onPick={(status) =>
+                        setDrill({
+                          spaceId: b.id,
+                          section: day,
+                          status,
+                          title: `${b.code} · ${day} · ${status}`,
+                        })
+                      }
+                    />
+                  ))}
                 </div>
               )}
             </>
           )}
         </div>
       </div>
+
+      {drill && <ClickUpTaskListModal target={drill} onClose={() => setDrill(null)} />}
     </AppShell>
   );
 }

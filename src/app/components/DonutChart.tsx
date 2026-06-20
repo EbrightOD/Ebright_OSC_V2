@@ -14,10 +14,12 @@ export default function DonutChart({
   data,
   size = 128,
   thickness = 14,
+  onSliceClick,
 }: {
   data: DonutSegment[];
   size?: number;
   thickness?: number;
+  onSliceClick?: (label: string) => void;
 }) {
   const total = data.reduce((s, d) => s + d.value, 0);
   const r = (size - thickness) / 2;
@@ -53,7 +55,11 @@ export default function DonutChart({
                 strokeDasharray={`${len} ${c - len}`}
                 strokeDashoffset={-offset}
                 strokeLinecap="butt"
-              />
+                onClick={onSliceClick ? () => onSliceClick(d.label) : undefined}
+                style={onSliceClick ? { cursor: "pointer" } : undefined}
+              >
+                {onSliceClick && <title>{`${d.label}: ${d.value}`}</title>}
+              </circle>
             );
             offset += len;
             return seg;

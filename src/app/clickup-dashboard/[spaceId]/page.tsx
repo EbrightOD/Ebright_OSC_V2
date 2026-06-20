@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import AppShell from "@/app/components/AppShell";
 import DonutChart from "@/app/components/DonutChart";
+import ClickUpTaskListModal, { type DrillTarget } from "@/app/components/ClickUpTaskListModal";
 
 interface StatusSlice { status: string; color: string; count: number }
 interface Section { name: string; total: number; statusBreakdown: StatusSlice[] }
@@ -26,7 +27,7 @@ type State =
 
 const LEGEND_LIMIT = 5;
 
-function SectionCard({ section }: { section: Section }) {
+function SectionCard({ section, onPick }: { section: Section; onPick: (status: string) => void }) {
   const segments = section.statusBreakdown.map((s) => ({ label: s.status, value: s.count, color: s.color }));
   const shown = section.statusBreakdown.slice(0, LEGEND_LIMIT);
   const hidden = section.statusBreakdown.length - shown.length;
@@ -37,13 +38,18 @@ function SectionCard({ section }: { section: Section }) {
         <span className="text-xs font-medium text-slate-400 tabular-nums">{section.total}</span>
       </div>
       <div className="flex items-center gap-4">
-        <DonutChart data={segments} size={104} thickness={12} />
+        <DonutChart data={segments} size={104} thickness={12} onSliceClick={onPick} />
         <ul className="flex-1 min-w-0 space-y-1">
           {shown.map((s) => (
-            <li key={s.status} className="flex items-center gap-2 text-xs">
-              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} aria-hidden="true" />
-              <span className="text-slate-600 truncate capitalize">{s.status}</span>
-              <span className="ml-auto tabular-nums text-slate-400 shrink-0">{s.count}</span>
+            <li key={s.status}>
+              <button
+                onClick={() => onPick(s.status)}
+                className="flex w-full items-center gap-2 text-xs rounded px-1 -mx-1 py-0.5 hover:bg-slate-50 cursor-pointer"
+              >
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} aria-hidden="true" />
+                <span className="text-slate-600 truncate capitalize">{s.status}</span>
+                <span className="ml-auto tabular-nums text-slate-400 shrink-0">{s.count}</span>
+              </button>
             </li>
           ))}
           {hidden > 0 && <li className="text-xs text-slate-400 pl-[18px]">+{hidden} more</li>}
@@ -61,6 +67,7 @@ export default function BranchDashboardPage() {
   const params = useParams<{ spaceId: string }>();
   const spaceId = params?.spaceId;
   const [state, setState] = useState<State>({ kind: "loading" });
+  const [drill, setDrill] = useState<DrillTarget | null>(null);
 
   const load = useCallback(async () => {
     if (!spaceId) return;
@@ -142,11 +149,26 @@ export default function BranchDashboardPage() {
 
           {state.kind === "ready" && state.data.sections.length > 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
-              {state.data.sections.map((s) => <SectionCard key={s.name} section={s} />)}
+              {state.data.sections.map((s) => (
+                <SectionCard
+                  key={s.name}
+                  section={s}
+                  onPick={(status) =>
+                    setDrill({
+                      spaceId: state.data.branch.id,
+                      section: s.name,
+                      status,
+                      title: `${state.data.branch.code} · ${s.name} · ${status}`,
+                    })
+                  }
+                />
+              ))}
             </div>
           )}
         </div>
       </div>
+
+      {drill && <ClickUpTaskListModal target={drill} onClose={() => setDrill(null)} />}
     </AppShell>
   );
 }
