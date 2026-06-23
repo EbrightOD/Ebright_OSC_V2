@@ -9,6 +9,7 @@ import {
   sectionSortKey,
   type ClickUpTaskView,
 } from "@/lib/clickup";
+import { branchDashboardUrl } from "@/lib/clickup-dashboards";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +59,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ spa
 
     return NextResponse.json({
       configured: true,
-      branch,
+      branch: { ...branch, dashboardUrl: branchDashboardUrl(branch.code) },
       totalTaskCount: tasks.length,
       sections,
     });
