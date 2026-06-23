@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { queryEbrightHrfs } from "@/lib/ebright-hrfs";
 import AppShell from "@/app/components/AppShell";
 import AttendanceReportView, {
   type EmployeeOption,
@@ -10,21 +11,67 @@ import AttendanceReportView, {
   type DayRow,
   type EmployeeContext,
 } from "@/app/components/AttendanceReportView";
+import {
+  getVersionsForStaff,
+  scheduleForDate,
+  type WeeklySchedule,
+  type DayKey,
+} from "@/lib/schedule-history";
 
 export const dynamic = "force-dynamic";
 
 // Only staff (role_id 6) appears on the attendance report.
 const STAFF_ROLE_ID = 6;
+// Same grace as the Summary — keep them in lockstep.
+const LATE_GRACE_MINUTES = 1;
 
-// Company convention: Sunday and Monday are off days
-const WEEKEND_DAY_NUMBERS = new Set([0, 1]);
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DAY_KEYS: DayKey[] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+// Company convention preserved from the legacy report — Sun/Mon are
+// "weekend" days when no schedule covers them (kept as a fallback so people
+// without scheduled hours don't see the whole week as "no_record").
+const WEEKEND_FALLBACK_DAY_NUMBERS = new Set([0, 1]);
+
 const TIME_FMT = new Intl.DateTimeFormat("en-GB", {
   timeZone: "Asia/Kuala_Lumpur",
   hour: "2-digit",
   minute: "2-digit",
   hour12: false,
 });
+
+// "YYYY-MM-DD" in MYT for a UTC timestamp. en-CA gives ISO-style output and
+// the timeZone option keeps the calendar day from drifting around midnight.
+function mytIsoDate(d: Date): string {
+  return d.toLocaleDateString("en-CA", { timeZone: "Asia/Kuala_Lumpur" });
+}
+
+function mytHm(d: Date): string {
+  return TIME_FMT.format(d);
+}
+
+function classifyLate(hm: string, scheduledStart: string, graceMin: number): boolean {
+  const ms = /^(\d{2}):(\d{2})/.exec(scheduledStart);
+  const mc = /^(\d{2}):(\d{2})/.exec(hm);
+  if (!ms || !mc) return false;
+  const start = Number(ms[1]) * 60 + Number(ms[2]);
+  const clock = Number(mc[1]) * 60 + Number(mc[2]);
+  return clock > start + graceMin;
+}
+
+function classifyEarly(hm: string, scheduledEnd: string): boolean {
+  const me = /^(\d{2}):(\d{2})/.exec(scheduledEnd);
+  const mc = /^(\d{2}):(\d{2})/.exec(hm);
+  if (!me || !mc) return false;
+  const end = Number(me[1]) * 60 + Number(me[2]);
+  const clock = Number(mc[1]) * 60 + Number(mc[2]);
+  return clock < end;
+}
+
+function formatDuration(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return `${h}h ${m}m`;
+}
 
 interface PageProps {
   searchParams: Promise<{
@@ -77,6 +124,8 @@ export default async function AttendanceReportPage({ searchParams }: PageProps) 
           orderBy: { employment_id: "desc" },
           select: {
             position: true,
+            // employee_id is the HRFS link — same as BranchStaff.employeeId.
+            employee_id: true,
             branch: {
               select: {
                 branch_code: true,
@@ -134,6 +183,7 @@ export default async function AttendanceReportPage({ searchParams }: PageProps) 
     }
   }
   const selected = employeesSorted.find((e) => e.user_id === selectedId) ?? null;
+  const selectedEmployeeCode = selected?.employment[0]?.employee_id ?? null;
 
   // Resolve month — default to current month in MYT
   const nowMyt = new Date(
@@ -141,8 +191,7 @@ export default async function AttendanceReportPage({ searchParams }: PageProps) 
   );
   const defaultMonth = `${nowMyt.getFullYear()}-${String(nowMyt.getMonth() + 1).padStart(2, "0")}`;
 
-  // Optional single-day filter (?date=YYYY-MM-DD). When valid, narrows the
-  // report to that one day and aligns `monthStr` to its month.
+  // Optional single-day filter (?date=YYYY-MM-DD).
   let dateStr = "";
   if (sp.date && /^\d{4}-\d{2}-\d{2}$/.test(sp.date)) {
     const probe = new Date(sp.date + "T00:00:00Z");
@@ -158,84 +207,188 @@ export default async function AttendanceReportPage({ searchParams }: PageProps) 
       : defaultMonth;
   const [year, month] = monthStr.split("-").map(Number);
 
-  // Iteration window for row generation: a single day if `dateStr` is set,
-  // otherwise the whole month.
   const lastDayOfMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  const startDay   = dateStr ? Number(dateStr.slice(8, 10)) : 1;
-  const endDay     = dateStr ? Number(dateStr.slice(8, 10)) : lastDayOfMonth;
-  const queryStart = new Date(Date.UTC(year, month - 1, startDay));
-  const queryEnd   = new Date(Date.UTC(year, month - 1, endDay));
+  const startDay = dateStr ? Number(dateStr.slice(8, 10)) : 1;
+  const endDay   = dateStr ? Number(dateStr.slice(8, 10)) : lastDayOfMonth;
 
-  const attendance = selected
-    ? await prisma.attendance.findMany({
-        where: {
-          user_id: selected.user_id,
-          date: { gte: queryStart, lte: queryEnd },
-        },
-        select: {
-          date: true,
-          check_in: true,
-          check_out: true,
-          status: true,
-          total_hours: true,
-        },
-      })
-    : [];
+  // UTC bounds covering [startDay 00:00 MYT, endDay+1 00:00 MYT).
+  // Midnight MYT = previous-day 16:00 UTC.
+  const windowStart = new Date(Date.UTC(year, month - 1, startDay, -8, 0, 0));
+  const windowEnd   = new Date(Date.UTC(year, month - 1, endDay + 1, -8, 0, 0));
 
-  const attMap = new Map(
-    attendance.map((a) => [a.date.toISOString().slice(0, 10), a]),
-  );
+  // ── HRFS lookups (only when we have an employeeId to map to BranchStaff) ──
+  let branchStaffId: number | null = null;
+  let cachedWorkingHours: WeeklySchedule | null = null;
+  let versions: { effectiveFrom: string; schedule: WeeklySchedule }[] = [];
 
-  const formatTime = (dt: Date | null | undefined): string | null =>
-    dt ? TIME_FMT.format(dt) : null;
+  if (selectedEmployeeCode) {
+    const bsRes = await queryEbrightHrfs<{ id: number; working_hours: unknown }>(
+      `SELECT id, "workingHours" AS working_hours
+         FROM public."BranchStaff"
+        WHERE "employeeId" = $1
+        LIMIT 1`,
+      [selectedEmployeeCode],
+    );
+    if (bsRes.rows[0]) {
+      branchStaffId = bsRes.rows[0].id;
+      cachedWorkingHours = (bsRes.rows[0].working_hours as WeeklySchedule | null) ?? null;
+      versions = await getVersionsForStaff(branchStaffId);
+    }
+  }
 
-  const formatDuration = (seconds: number): string => {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    return `${h}h ${m}m`;
+  // ── HRFS: scans for this employee in the window ──────────────────────────
+  // Aggregate per MYT date so a single day shows one row even when scans came
+  // from multiple devices/scanners. Uses the same source/aggregation as the
+  // Summary view so the two pages always agree on times.
+  type ScanRow = {
+    date_myt: string;
+    first_event: Date;
+    last_event: Date;
+    scan_count: string;
   };
+  const scansByDate = new Map<string, { firstEvent: Date; lastEvent: Date }>();
+  if (selectedEmployeeCode) {
+    const scanRes = await queryEbrightHrfs<ScanRow>(
+      `WITH events AS (
+         SELECT
+           COALESCE(m.true_id, h.person_id) AS emp_no,
+           h.event_time
+         FROM public.hikvision_attendance_all h
+         LEFT JOIN public.hikvision_id_map m ON m.wrong_id = h.person_id
+         WHERE h.event_time >= $1
+           AND h.event_time <  $2
+           AND COALESCE(m.true_id, h.person_id) = $3
+       )
+       SELECT
+         to_char(event_time AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD') AS date_myt,
+         MIN(event_time) AS first_event,
+         MAX(event_time) AS last_event,
+         COUNT(*)::text AS scan_count
+       FROM events
+       GROUP BY date_myt
+       ORDER BY date_myt`,
+      [windowStart.toISOString(), windowEnd.toISOString(), selectedEmployeeCode],
+    );
+    for (const r of scanRes.rows) {
+      const first = r.first_event instanceof Date ? r.first_event : new Date(r.first_event);
+      const last  = r.last_event  instanceof Date ? r.last_event  : new Date(r.last_event);
+      scansByDate.set(r.date_myt, { firstEvent: first, lastEvent: last });
+    }
+  }
 
+  // ── HRFS: leave records for this employee in the window ──────────────────
+  // LeaveDate is a DATE column on HRFS — to_char keeps the key as a plain
+  // YYYY-MM-DD string so it matches the per-day isoDate lookup below without
+  // any timezone re-parsing. LeaveTransaction has no LeaveTypeName column;
+  // we surface just the code (UI renders it as a chip).
+  const leaveByDate = new Map<string, { code: string | null; name: string | null }>();
+  if (selectedEmployeeCode) {
+    const lvRes = await queryEbrightHrfs<{
+      leave_date: string;
+      leave_type_code: string | null;
+    }>(
+      `SELECT to_char("LeaveDate", 'YYYY-MM-DD') AS leave_date,
+              "LeaveTypeCode" AS leave_type_code
+         FROM public."LeaveTransaction"
+        WHERE "EmployeeCode" = $1
+          AND "LeaveDate" >= $2::date AND "LeaveDate" <= $3::date`,
+      [
+        selectedEmployeeCode,
+        `${year}-${String(month).padStart(2, "0")}-${String(startDay).padStart(2, "0")}`,
+        `${year}-${String(month).padStart(2, "0")}-${String(endDay).padStart(2, "0")}`,
+      ],
+    );
+    for (const r of lvRes.rows) {
+      leaveByDate.set(r.leave_date, { code: r.leave_type_code, name: null });
+    }
+  }
+
+  // ── Build per-day rows ───────────────────────────────────────────────────
   let presentCount = 0;
   let noRecordCount = 0;
+  let onLeaveCount = 0;
+  let lateCount = 0;
+  let leftEarlyCount = 0;
   let totalSeconds = 0;
 
   const rows: DayRow[] = [];
   for (let d = startDay; d <= endDay; d++) {
-    const date = new Date(Date.UTC(year, month - 1, d));
     const isoDate = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-    const att = attMap.get(isoDate);
-    const dayOfWeek = date.getUTCDay();
-    const isWeekend = WEEKEND_DAY_NUMBERS.has(dayOfWeek);
+    const probe = new Date(Date.UTC(year, month - 1, d));
+    const dayOfWeek = probe.getUTCDay();
+    const dayKey = DAY_KEYS[dayOfWeek];
 
-    let status: DayRow["status"] = "no_record";
-    if (isWeekend) status = "weekend";
-    else if (att?.check_in) status = "present";
+    // Schedule resolution:
+    //   - versions present and one covers this date → use it
+    //   - versions present but none covers this date → no schedule (no badges)
+    //   - no versions at all → fall back to cached current workingHours
+    let scheduleForDay: WeeklySchedule | undefined;
+    if (versions.length > 0) {
+      scheduleForDay = scheduleForDate(versions, isoDate);
+    } else if (cachedWorkingHours) {
+      scheduleForDay = cachedWorkingHours;
+    }
+    const todaysSlot = scheduleForDay?.[dayKey] ?? null;
 
+    const scan = scansByDate.get(isoDate) ?? null;
+    const sameEvent =
+      scan && scan.firstEvent.getTime() === scan.lastEvent.getTime();
+    const checkInDate = scan?.firstEvent ?? null;
+    // Only treat last_event as check-out when it's strictly later than the
+    // first — a single scan in the day is just a check-in.
+    const checkOutDate = scan && !sameEvent ? scan.lastEvent : null;
+
+    const leave = leaveByDate.get(isoDate) ?? null;
+
+    let status: DayRow["status"];
     let duration: string | null = null;
-    if (att?.check_in && att?.check_out) {
-      const diff = (att.check_out.getTime() - att.check_in.getTime()) / 1000;
+    let late = false;
+    let leftEarly = false;
+    let leaveCode: string | null = null;
+
+    if (leave) {
+      // Leave outranks scans for status — even if they popped by, the day is
+      // accounted as leave for the report.
+      status = "leave";
+      leaveCode = leave.code;
+      onLeaveCount += 1;
+    } else if (checkInDate && checkOutDate) {
+      // Feature 2: Present only when BOTH scans exist — keeps "Days Present"
+      // and "Total Hours" consistent (a single-scan day has neither).
+      status = "present";
+      const diff = (checkOutDate.getTime() - checkInDate.getTime()) / 1000;
       if (diff > 0) {
         duration = formatDuration(diff);
         totalSeconds += diff;
       }
-    } else if (att?.total_hours) {
-      const hrs = Number(att.total_hours);
-      duration = formatDuration(hrs * 3600);
-      totalSeconds += hrs * 3600;
+      if (todaysSlot) {
+        late = classifyLate(mytHm(checkInDate), todaysSlot.start, LATE_GRACE_MINUTES);
+        leftEarly = classifyEarly(mytHm(checkOutDate), todaysSlot.end);
+      }
+      if (late) lateCount += 1;
+      if (leftEarly) leftEarlyCount += 1;
+      presentCount += 1;
+    } else if (!todaysSlot && WEEKEND_FALLBACK_DAY_NUMBERS.has(dayOfWeek)) {
+      // No schedule for an off-day → render as weekend (cosmetic; doesn't
+      // count toward present/no_record).
+      status = "weekend";
+    } else {
+      status = "no_record";
+      noRecordCount += 1;
     }
-
-    if (status === "present") presentCount += 1;
-    else if (status === "no_record") noRecordCount += 1;
 
     rows.push({
       day: d,
       dayName: DAY_LABELS[dayOfWeek],
       date: `${String(d).padStart(2, "0")}/${String(month).padStart(2, "0")}/${year}`,
       isoDate,
-      checkIn: formatTime(att?.check_in),
-      checkOut: formatTime(att?.check_out),
+      checkIn: checkInDate ? mytHm(checkInDate) : null,
+      checkOut: checkOutDate ? mytHm(checkOutDate) : null,
       duration,
       status,
+      late,
+      leftEarly,
+      leaveCode,
     });
   }
 
@@ -296,6 +449,8 @@ export default async function AttendanceReportPage({ searchParams }: PageProps) 
           selected.employment[0]?.branch?.branch_name ??
           null,
         branchCode: selected.employment[0]?.branch?.branch_code ?? null,
+        branchStaffId,
+        employeeCode: selectedEmployeeCode,
       }
     : null;
 
@@ -326,7 +481,11 @@ export default async function AttendanceReportPage({ searchParams }: PageProps) 
         summary={{
           present: presentCount,
           noRecord: noRecordCount,
+          onLeave: onLeaveCount,
+          late: lateCount,
+          leftEarly: leftEarlyCount,
           totalHours: totalHoursLabel,
+          totalSeconds,
         }}
       />
     </AppShell>
