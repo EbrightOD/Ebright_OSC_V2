@@ -100,14 +100,21 @@ function classifyEarly(
   return clockMin < endMin ? "early" : "normal";
 }
 
-interface BranchStaffRow {
+// Flattened shape coming out of the LOCAL employment query. Field names kept
+// identical to the old BranchStaff version so the downstream classification
+// code didn't need to change.
+interface LocalStaffRow {
+  /** employment_id — used as the key into schedulesByDate (history rows). */
   id: number;
+  user_id: number;
   name: string | null;
+  /** branch.branch_code, e.g. "HQ", "ST", "AMP". */
   branch: string | null;
   role: string | null;
   position: string | null;
   department: string | null;
   location: string | null;
+  /** employment.employee_id — same value as BranchStaff.employeeId on HRFS. */
   employeeId: string | null;
   workingHours: Record<string, { start: string; end: string } | null> | null;
 }
@@ -185,17 +192,47 @@ export default async function AttendanceSummaryPage({ searchParams }: PageProps)
     : null;
   const branchCode = selectedBranch?.branch_code ?? null;
 
-  // ── HRFS: every active staff (so schedule-history can still place someone
-  //         whose CACHED workingHours field doesn't match the historical week) ─
-  const allStaffResult = await queryEbrightHrfs<BranchStaffRow>(
-    `SELECT id, name, branch, role, position, department, location,
-            "employeeId", "workingHours"
-       FROM public."BranchStaff"
-      WHERE status = 'Active'
-      ORDER BY name ASC`,
-  );
-  const allStaff = allStaffResult.rows;
-  const staffByEmpNo = new Map<string, BranchStaffRow>();
+  // ── LOCAL: every active employment row (one per active staff member).
+  //          user_profile is the source of truth for names; employment joins
+  //          to branch/department/role and now carries working_hours_json
+  //          (synced from HRFS by /api/admin/sync-from-branchstaff).
+  const employmentRows = await prisma.employment.findMany({
+    where: {
+      status: "active",
+      employee_id: { not: null },
+      users: { status: "active", deleted_at: null },
+    },
+    select: {
+      employment_id: true,
+      user_id: true,
+      employee_id: true,
+      position: true,
+      working_hours_json: true,
+      branch: { select: { branch_code: true, location: true } },
+      department: { select: { department_name: true } },
+      users: {
+        select: {
+          role: { select: { role_type: true } },
+          user_profile: { select: { full_name: true } },
+        },
+      },
+    },
+  });
+  const allStaff: LocalStaffRow[] = employmentRows.map((e) => ({
+    id: e.employment_id,
+    user_id: e.user_id,
+    name: e.users.user_profile?.full_name ?? null,
+    branch: e.branch?.branch_code ?? null,
+    role: e.users.role?.role_type ?? null,
+    position: e.position ?? null,
+    department: e.department?.department_name ?? null,
+    location: e.branch?.location ?? null,
+    employeeId: e.employee_id,
+    workingHours:
+      (e.working_hours_json as Record<string, { start: string; end: string } | null> | null) ?? null,
+  }));
+  allStaff.sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+  const staffByEmpNo = new Map<string, LocalStaffRow>();
   for (const s of allStaff) {
     if (s.employeeId) staffByEmpNo.set(s.employeeId, s);
   }
@@ -209,7 +246,7 @@ export default async function AttendanceSummaryPage({ searchParams }: PageProps)
   // those whose schedule has a non-null entry for today's dayKey. Rotation
   // (Feature 5) can also pull a staff in even if their schedule lives at a
   // different branch.
-  function resolvedDayScheduleFor(s: BranchStaffRow): WeeklySchedule | null {
+  function resolvedDayScheduleFor(s: LocalStaffRow): WeeklySchedule | null {
     if (s.id in schedulesByDate) {
       // History exists for this staff — schedulesByDate is authoritative.
       // (object → use it, null → no version covers selectedDate → no schedule)
@@ -225,7 +262,7 @@ export default async function AttendanceSummaryPage({ searchParams }: PageProps)
   // - If no branch selected (All branches), include every active staff that
   //   has a schedule for today.
   const scheduledStaff: Array<{
-    staff: BranchStaffRow;
+    staff: LocalStaffRow;
     schedule: { start: string; end: string };
     /** Effective branch for today (rotation can override BranchStaff.branch). */
     branchForDay: string | null;
@@ -328,7 +365,7 @@ export default async function AttendanceSummaryPage({ searchParams }: PageProps)
     if (r.employee_code) leaveByEmpCode.set(r.employee_code, entry);
     if (r.employee_name) leaveByName.set(r.employee_name.trim().toLowerCase(), entry);
   }
-  function leaveFor(staff: BranchStaffRow) {
+  function leaveFor(staff: LocalStaffRow) {
     if (staff.employeeId) {
       const byCode = leaveByEmpCode.get(staff.employeeId);
       if (byCode) return byCode;
@@ -338,6 +375,18 @@ export default async function AttendanceSummaryPage({ searchParams }: PageProps)
       if (byName) return byName;
     }
     return null;
+  }
+
+  // ── LOCAL: HR-entered justifications for selectedDate ────────────────────
+  // A row here means "this person didn't scan today and HR has explained why".
+  // The Summary excludes them from Missing and counts them as Justified instead.
+  const justifications = await prisma.attendance_justification.findMany({
+    where: { date: new Date(selectedDate + "T00:00:00Z") },
+    select: { id: true, user_id: true, reason_category: true, note: true },
+  });
+  const justificationByUser = new Map<number, { id: number; reason: string; note: string | null }>();
+  for (const j of justifications) {
+    justificationByUser.set(j.user_id, { id: j.id, reason: j.reason_category, note: j.note });
   }
 
   // ── Expected rows (scheduled today, in scope) ────────────────────────────
@@ -360,17 +409,25 @@ export default async function AttendanceSummaryPage({ searchParams }: PageProps)
       : null;
 
     // Absence classification — only for staff who didn't scan.
+    //   priority: HR justification → leave record → plain missing
     let absenceKind: AbsenceKind = null;
     let leaveCode: string | null = null;
     let leaveName: string | null = null;
+    const just = justificationByUser.get(s.user_id) ?? null;
     if (!checkInDate && !checkOutDate) {
-      const lv = leaveFor(s);
-      if (lv) {
-        leaveCode = lv.code;
-        leaveName = lv.name;
-        absenceKind = lv.code === MIA_LEAVE_CODE ? "mia" : "on_leave";
+      if (just) {
+        absenceKind = "justified";
+        leaveCode = just.reason;
+        leaveName = just.note;
       } else {
-        absenceKind = "missing";
+        const lv = leaveFor(s);
+        if (lv) {
+          leaveCode = lv.code;
+          leaveName = lv.name;
+          absenceKind = lv.code === MIA_LEAVE_CODE ? "mia" : "on_leave";
+        } else {
+          absenceKind = "missing";
+        }
       }
     }
 
@@ -385,7 +442,9 @@ export default async function AttendanceSummaryPage({ searchParams }: PageProps)
         : null;
 
     return {
-      user_id: s.id,
+      // user_id is the real user_id (NOT employment_id) — the justification
+      // modal posts user_id and the modal pre-fill needs this lookup to work.
+      user_id: s.user_id,
       name: s.name ?? s.employeeId ?? `Staff #${s.id}`,
       employee_code: s.employeeId ?? null,
       department: s.department ?? s.location ?? null,
@@ -400,6 +459,7 @@ export default async function AttendanceSummaryPage({ searchParams }: PageProps)
       absence_kind: absenceKind,
       leave_type_code: leaveCode,
       leave_type_name: leaveName,
+      justification: just,
     };
   });
 
@@ -427,7 +487,7 @@ export default async function AttendanceSummaryPage({ searchParams }: PageProps)
         scan.last_event.getTime() > scan.first_event.getTime() ? scan.last_event : null;
 
       visitorRows.push({
-        user_id: staff.id,
+        user_id: staff.user_id,
         name: staff.name ?? `Emp ${scan.emp_no}`,
         employee_code: scan.emp_no,
         department: staff.department ?? staff.location ?? null,
@@ -444,6 +504,7 @@ export default async function AttendanceSummaryPage({ searchParams }: PageProps)
         absence_kind: null,
         leave_type_code: null,
         leave_type_name: null,
+        justification: null,
       });
     }
   }
@@ -457,9 +518,10 @@ export default async function AttendanceSummaryPage({ searchParams }: PageProps)
   const currentlyIn = rows.filter((r) => r.check_in && !r.check_out).length;
   const checkedOut = rows.filter((r) => r.check_in && r.check_out).length;
   const totalEmployees = expectedRows.length;
-  const missing = expectedRows.filter((r) => r.absence_kind === "missing").length;
-  const onLeave = expectedRows.filter((r) => r.absence_kind === "on_leave").length;
-  const mia     = expectedRows.filter((r) => r.absence_kind === "mia").length;
+  const missing   = expectedRows.filter((r) => r.absence_kind === "missing").length;
+  const onLeave   = expectedRows.filter((r) => r.absence_kind === "on_leave").length;
+  const mia       = expectedRows.filter((r) => r.absence_kind === "mia").length;
+  const justified = expectedRows.filter((r) => r.absence_kind === "justified").length;
   const scanned = expectedScanned + visitorRows.length;
 
   const data: SummaryData = {
@@ -473,12 +535,14 @@ export default async function AttendanceSummaryPage({ searchParams }: PageProps)
       missing,
       onLeave,
       mia,
+      justified,
       totalEmployees,
     },
     scannerOnline,
     lastSyncedIso: lastScanTs?.toISOString() ?? null,
     recordsToday,
     rows,
+    canJustify: ALLOWED_ROLE_TYPES.has(roleType),
   };
 
   return (

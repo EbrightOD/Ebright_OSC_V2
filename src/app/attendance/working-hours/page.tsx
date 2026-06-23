@@ -2,13 +2,13 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { queryEbrightHrfs } from "@/lib/ebright-hrfs";
 import AppShell from "@/app/components/AppShell";
 import WorkingHoursEditorView, {
   type StaffOption,
   type ScheduleVersion,
 } from "@/app/components/WorkingHoursEditorView";
 import { ShieldAlert } from "lucide-react";
+import { getVersionsForEmployment } from "@/lib/schedule-history";
 
 export const dynamic = "force-dynamic";
 
@@ -57,29 +57,33 @@ export default async function WorkingHoursPage({ searchParams }: PageProps) {
     );
   }
 
-  // Active staff from HRFS — same source the Summary/Report consume.
-  const staffResult = await queryEbrightHrfs<{
-    id: number;
-    name: string | null;
-    branch: string | null;
-    employee_id: string | null;
-    position: string | null;
-    working_hours: unknown;
-  }>(
-    `SELECT id, name, branch, "employeeId" AS employee_id, position,
-            "workingHours" AS working_hours
-       FROM public."BranchStaff"
-      WHERE status = 'Active'
-      ORDER BY branch ASC NULLS LAST, name ASC`,
-  );
-  const staff: StaffOption[] = staffResult.rows.map((s) => ({
-    id: s.id,
-    name: s.name ?? `Staff #${s.id}`,
-    branch: s.branch,
-    employeeId: s.employee_id,
-    position: s.position,
+  // Local source of truth: active employments with a person attached.
+  // Source: src/lib/schedule-history.ts now reads from this table.
+  const employments = await prisma.employment.findMany({
+    where: {
+      status: "active",
+      employee_id: { not: null },
+      users: { status: "active", deleted_at: null },
+    },
+    orderBy: [{ branch: { branch_code: "asc" } }, { users: { user_profile: { full_name: "asc" } } }],
+    select: {
+      employment_id: true,
+      employee_id: true,
+      position: true,
+      working_hours_json: true,
+      branch: { select: { branch_code: true, branch_name: true } },
+      users: { select: { user_profile: { select: { full_name: true } } } },
+    },
+  });
+
+  const staff: StaffOption[] = employments.map((e) => ({
+    id: e.employment_id,
+    name: e.users.user_profile?.full_name ?? `Emp #${e.employment_id}`,
+    branch: e.branch?.branch_code ?? null,
+    employeeId: e.employee_id,
+    position: e.position,
     currentSchedule:
-      (s.working_hours as Record<string, unknown> | null) ?? null,
+      (e.working_hours_json as Record<string, unknown> | null) ?? null,
   }));
 
   const sp = await searchParams;
@@ -88,29 +92,16 @@ export default async function WorkingHoursPage({ searchParams }: PageProps) {
     ? staff.find((s) => s.id === requestedId)?.id ?? null
     : staff[0]?.id ?? null;
 
-  // Load versions for the selected staff (oldest-first).
-  let versions: ScheduleVersion[] = [];
-  if (selectedId !== null) {
-    const vRes = await queryEbrightHrfs<{ effective_from: string; schedule: unknown }>(
-      `SELECT to_char("effectiveFrom", 'YYYY-MM-DD') AS effective_from,
-              schedule
-         FROM public."BranchStaffSchedule"
-        WHERE "branchStaffId" = $1
-        ORDER BY "effectiveFrom" ASC`,
-      [selectedId],
-    );
-    versions = vRes.rows.map((r) => ({
-      effectiveFrom: r.effective_from,
-      schedule: r.schedule as ScheduleVersion["schedule"],
-    }));
-  }
+  const versions: ScheduleVersion[] = selectedId !== null
+    ? await getVersionsForEmployment(selectedId)
+    : [];
 
   return (
     <AppShell email={userEmail} role={userRole} name={userName}>
       <WorkingHoursEditorView
         staff={staff}
         selectedId={selectedId}
-        versions={versions}
+        versions={versions as unknown as ScheduleVersion[]}
       />
     </AppShell>
   );

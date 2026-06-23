@@ -1,8 +1,9 @@
 import "server-only";
-import { queryEbrightHrfs } from "@/lib/ebright-hrfs";
+import { prisma } from "@/lib/prisma";
 
-// Weekly schedule lives on HRFS as BranchStaff.workingHours (jsonb).
-// Same shape is used for every versioned snapshot in BranchStaffSchedule.
+// Weekly schedule lives on employment.working_hours_json (jsonb).
+// Same shape is used for every versioned snapshot in
+// employment_schedule_version.
 export type DayKey = "Sun" | "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat";
 export const DAY_KEYS: DayKey[] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -10,7 +11,7 @@ export type DaySchedule = { start: string; end: string } | null;
 export type WeeklySchedule = Partial<Record<DayKey, DaySchedule>>;
 
 export interface ScheduleVersion {
-  effectiveFrom: string; // YYYY-MM-DD (MYT calendar)
+  effectiveFrom: string; // YYYY-MM-DD
   schedule: WeeklySchedule;
 }
 
@@ -59,104 +60,110 @@ export function slotForDate(
 export function mondayOfWeekMyt(isoDate: string): string {
   const [y, m, d] = isoDate.split("-").map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d));
-  const dow = dt.getUTCDay(); // 0=Sun..6=Sat
-  // Sun(0) → -6, Mon(1) → 0, Tue(2) → -1, ... back to Monday.
+  const dow = dt.getUTCDay();
   const delta = dow === 0 ? -6 : 1 - dow;
   const mon = new Date(dt.getTime() + delta * 86_400_000);
   return `${mon.getUTCFullYear()}-${String(mon.getUTCMonth() + 1).padStart(2, "0")}-${String(mon.getUTCDate()).padStart(2, "0")}`;
 }
 
-/** All versions for one staff, oldest-first. */
-export async function getVersionsForStaff(
-  branchStaffId: number,
+function dateToIso(d: Date): string {
+  // Use UTC because the column is DATE; Prisma returns a UTC midnight Date.
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+/** All versions for one employment, oldest-first. */
+export async function getVersionsForEmployment(
+  employmentId: number,
 ): Promise<ScheduleVersion[]> {
-  const r = await queryEbrightHrfs<{ effective_from: string; schedule: WeeklySchedule }>(
-    // to_char so the date never shifts a day across timezone parsing — the
-    // server-side driver would otherwise return a JS Date and we'd risk a UTC
-    // re-stringify dropping the calendar day.
-    `SELECT to_char("effectiveFrom", 'YYYY-MM-DD') AS effective_from,
-            schedule
-       FROM public."BranchStaffSchedule"
-      WHERE "branchStaffId" = $1
-      ORDER BY "effectiveFrom" ASC`,
-    [branchStaffId],
-  );
-  return r.rows.map((row) => ({
-    effectiveFrom: row.effective_from,
-    schedule: row.schedule,
+  const rows = await prisma.employment_schedule_version.findMany({
+    where: { employment_id: employmentId },
+    orderBy: { effective_from: "asc" },
+    select: { effective_from: true, schedule: true },
+  });
+  return rows.map((r) => ({
+    effectiveFrom: dateToIso(r.effective_from),
+    schedule: r.schedule as WeeklySchedule,
   }));
 }
 
 /**
- * Resolved schedules for every staff that has history, keyed by branchStaffId.
+ * Resolved schedules for every employment that has history, keyed by
+ * employment_id.
  * - value = schedule object → use it for that date
  * - value = null            → has history but no version covers `dateStr`
  *                             (render WITHOUT late/early — schedule wasn't set yet)
  * - key absent              → no history at all → caller falls back to current
- *                             BranchStaff.workingHours
+ *                             employment.working_hours_json
  */
 export async function getResolvedSchedulesForDate(
   dateStr: string,
 ): Promise<Record<number, WeeklySchedule | null>> {
-  const r = await queryEbrightHrfs<{
-    branch_staff_id: number;
-    effective_from: string;
-    schedule: WeeklySchedule;
-  }>(
-    // Per-staff, pick the row whose effectiveFrom is the most recent <= dateStr.
-    // Then UNION-ALL with staff whose earliest version is *after* dateStr so we
-    // can mark them as "has history but no schedule covering this date".
-    `WITH covered AS (
-       SELECT DISTINCT ON ("branchStaffId")
-         "branchStaffId" AS branch_staff_id,
-         to_char("effectiveFrom", 'YYYY-MM-DD') AS effective_from,
-         schedule
-       FROM public."BranchStaffSchedule"
-       WHERE "effectiveFrom" <= $1::date
-       ORDER BY "branchStaffId", "effectiveFrom" DESC
-     ),
-     uncovered AS (
-       SELECT "branchStaffId" AS branch_staff_id,
-              ''::text AS effective_from,
-              'null'::jsonb AS schedule
-         FROM public."BranchStaffSchedule"
-        WHERE "branchStaffId" NOT IN (SELECT branch_staff_id FROM covered)
-        GROUP BY "branchStaffId"
-     )
-     SELECT * FROM covered
-     UNION ALL
-     SELECT * FROM uncovered`,
-    [dateStr],
-  );
+  const target = new Date(dateStr + "T00:00:00Z");
+
+  // Fetch every row up to and including the target date, plus every staff
+  // that has any history rows AT ALL (so we can return null for those whose
+  // earliest version is in the future).
+  const [covering, allHistoryIds] = await Promise.all([
+    prisma.employment_schedule_version.findMany({
+      where: { effective_from: { lte: target } },
+      orderBy: [{ employment_id: "asc" }, { effective_from: "desc" }],
+      select: { employment_id: true, effective_from: true, schedule: true },
+    }),
+    prisma.employment_schedule_version.findMany({
+      distinct: ["employment_id"],
+      select: { employment_id: true },
+    }),
+  ]);
+
   const out: Record<number, WeeklySchedule | null> = {};
-  for (const row of r.rows) {
-    out[row.branch_staff_id] = row.effective_from === "" ? null : row.schedule;
+
+  // covering is sorted by employment_id, effective_from DESC — the first
+  // row per employment is the latest version <= target.
+  let lastEmploymentId: number | null = null;
+  for (const row of covering) {
+    if (row.employment_id === lastEmploymentId) continue;
+    out[row.employment_id] = row.schedule as WeeklySchedule;
+    lastEmploymentId = row.employment_id;
   }
+
+  // Mark "has history but no version covers this date" with null.
+  for (const r of allHistoryIds) {
+    if (!(r.employment_id in out)) out[r.employment_id] = null;
+  }
+
   return out;
 }
 
 /**
- * Upsert a versioned schedule for one staff, AND keep the cached current
- * BranchStaff.workingHours in sync. Two separate statements (the pg extended
- * protocol can't combine them with params); if the cache update fails, the
- * version row is still authoritative and the next edit will re-sync the cache.
+ * Upsert a versioned schedule for one employment AND keep
+ * employment.working_hours_json in sync as the "current" cache.
  */
 export async function upsertScheduleVersion(args: {
-  branchStaffId: number;
+  employmentId: number;
   effectiveFrom: string;
   schedule: WeeklySchedule;
 }): Promise<void> {
-  const { branchStaffId, effectiveFrom, schedule } = args;
-  const scheduleJson = JSON.stringify(schedule);
-  await queryEbrightHrfs(
-    `INSERT INTO public."BranchStaffSchedule" ("branchStaffId", "effectiveFrom", schedule)
-     VALUES ($1, $2::date, $3::jsonb)
-     ON CONFLICT ("branchStaffId", "effectiveFrom")
-     DO UPDATE SET schedule = EXCLUDED.schedule`,
-    [branchStaffId, effectiveFrom, scheduleJson],
-  );
-  await queryEbrightHrfs(
-    `UPDATE public."BranchStaff" SET "workingHours" = $1::jsonb WHERE id = $2`,
-    [scheduleJson, branchStaffId],
-  );
+  const { employmentId, effectiveFrom, schedule } = args;
+  const effDate = new Date(effectiveFrom + "T00:00:00Z");
+
+  await prisma.$transaction([
+    prisma.employment_schedule_version.upsert({
+      where: {
+        employment_id_effective_from: {
+          employment_id: employmentId,
+          effective_from: effDate,
+        },
+      },
+      create: {
+        employment_id: employmentId,
+        effective_from: effDate,
+        schedule: schedule as never,
+      },
+      update: { schedule: schedule as never },
+    }),
+    prisma.employment.update({
+      where: { employment_id: employmentId },
+      data: { working_hours_json: schedule as never },
+    }),
+  ]);
 }

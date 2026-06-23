@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import {
-  getVersionsForStaff,
+  getVersionsForEmployment,
   getResolvedSchedulesForDate,
   upsertScheduleVersion,
   type WeeklySchedule,
@@ -30,15 +30,15 @@ export async function GET(req: NextRequest) {
   if (!auth.ok) return auth.response;
 
   const url = new URL(req.url);
-  const branchStaffIdParam = url.searchParams.get("branchStaffId");
+  const employmentIdParam = url.searchParams.get("employmentId");
   const dateParam = url.searchParams.get("date");
 
-  if (branchStaffIdParam) {
-    const id = Number(branchStaffIdParam);
+  if (employmentIdParam) {
+    const id = Number(employmentIdParam);
     if (!Number.isFinite(id)) {
-      return NextResponse.json({ error: "Invalid branchStaffId" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid employmentId" }, { status: 400 });
     }
-    const versions = await getVersionsForStaff(id);
+    const versions = await getVersionsForEmployment(id);
     return NextResponse.json({ versions });
   }
 
@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
   }
 
   return NextResponse.json(
-    { error: "Provide ?branchStaffId=N or ?date=YYYY-MM-DD" },
+    { error: "Provide ?employmentId=N or ?date=YYYY-MM-DD" },
     { status: 400 },
   );
 }
@@ -70,9 +70,9 @@ function isWeeklySchedule(value: unknown): value is WeeklySchedule {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await requireAuth();
-  if (!auth.ok) return auth.response;
-  if (!EDIT_ROLES.has(auth.roleType)) {
+  const authResult = await requireAuth();
+  if (!authResult.ok) return authResult.response;
+  if (!EDIT_ROLES.has(authResult.roleType)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -80,13 +80,13 @@ export async function POST(req: NextRequest) {
   try { body = await req.json(); } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
-  const { branchStaffId, effectiveFrom, schedule } = (body ?? {}) as {
-    branchStaffId?: unknown;
+  const { employmentId, effectiveFrom, schedule } = (body ?? {}) as {
+    employmentId?: unknown;
     effectiveFrom?: unknown;
     schedule?: unknown;
   };
-  if (typeof branchStaffId !== "number" || !Number.isInteger(branchStaffId)) {
-    return NextResponse.json({ error: "branchStaffId must be an integer" }, { status: 400 });
+  if (typeof employmentId !== "number" || !Number.isInteger(employmentId)) {
+    return NextResponse.json({ error: "employmentId must be an integer" }, { status: 400 });
   }
   if (typeof effectiveFrom !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom)) {
     return NextResponse.json({ error: "effectiveFrom must be YYYY-MM-DD" }, { status: 400 });
@@ -98,6 +98,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  await upsertScheduleVersion({ branchStaffId, effectiveFrom, schedule });
+  await upsertScheduleVersion({ employmentId, effectiveFrom, schedule });
   return NextResponse.json({ ok: true });
 }

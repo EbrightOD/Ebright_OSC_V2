@@ -20,7 +20,10 @@ import {
   AlertTriangle,
   AlertCircle,
   Clock,
+  CheckCircle2,
+  Edit3,
 } from "lucide-react";
+import JustificationModal, { type JustificationTarget } from "@/app/components/JustificationModal";
 
 export type BranchOption = {
   branch_id: number;
@@ -29,11 +32,12 @@ export type BranchOption = {
 };
 
 // Absence categorisation for staff scheduled today who didn't scan:
-//   missing  = no scan AND no leave record
-//   on_leave = has a leave record whose code is NOT the "unpaid" code
-//   mia      = leave code matches the unpaid code (UL in this portal)
-// null      = the person scanned today (handled by check_in/check_out fields).
-export type AbsenceKind = "missing" | "on_leave" | "mia" | null;
+//   missing   = no scan, no leave record, no HR justification
+//   on_leave  = has a leave record whose code is NOT the "unpaid" code
+//   mia       = leave code matches the unpaid code (UL in this portal)
+//   justified = HR entered an attendance_justification row for this day
+// null        = the person scanned today (handled by check_in/check_out fields).
+export type AbsenceKind = "missing" | "on_leave" | "mia" | "justified" | null;
 
 export type AttendanceRow = {
   user_id: number;
@@ -51,6 +55,8 @@ export type AttendanceRow = {
   absence_kind: AbsenceKind;
   leave_type_code: string | null;
   leave_type_name: string | null;
+  /** Existing HR justification, if any — drives the edit-modal pre-fill. */
+  justification: { id: number; reason: string; note: string | null } | null;
 };
 
 export type SummaryData = {
@@ -64,12 +70,15 @@ export type SummaryData = {
     missing: number;
     onLeave: number;
     mia: number;
+    justified: number;
     totalEmployees: number;
   };
   scannerOnline: boolean;
   lastSyncedIso: string | null;
   recordsToday: number;
   rows: AttendanceRow[];
+  /** Whether the current viewer can add/edit HR justifications. */
+  canJustify: boolean;
 };
 
 const TIME_FMT = new Intl.DateTimeFormat("en-GB", {
@@ -87,13 +96,19 @@ const DATE_SHORT_FMT = new Intl.DateTimeFormat("en-GB", {
   month: "short",
 });
 
-type StatusFilter = "scanned" | "currentlyIn" | "checkedOut" | "missing";
+type StatusFilter =
+  | "scanned"
+  | "currentlyIn"
+  | "checkedOut"
+  | "missing"
+  | "justified";
 
 const STATUS_PREDICATES: Record<StatusFilter, (r: AttendanceRow) => boolean> = {
   scanned:     (r) => Boolean(r.check_in || r.check_out),
   currentlyIn: (r) => Boolean(r.check_in && !r.check_out),
   checkedOut:  (r) => Boolean(r.check_in && r.check_out),
   missing:     (r) => r.absence_kind === "missing",
+  justified:   (r) => r.absence_kind === "justified",
 };
 
 export default function AttendanceSummaryView({ data }: { data: SummaryData }) {
@@ -103,6 +118,18 @@ export default function AttendanceSummaryView({ data }: { data: SummaryData }) {
   const [statusFilter, setStatusFilter] = useState<StatusFilter | null>(null);
   const [now, setNow] = useState<Date | null>(null);
   const [pulling, setPulling] = useState(false);
+  const [justifyTarget, setJustifyTarget] = useState<JustificationTarget | null>(null);
+
+  const openJustify = (row: AttendanceRow) => {
+    if (!data.canJustify) return;
+    setJustifyTarget({
+      userId: row.user_id,
+      employeeName: row.name,
+      employeeCode: row.employee_code,
+      date: data.selectedDate,
+      existing: row.justification ?? null,
+    });
+  };
 
   const selectedBranchId = data.selectedBranch?.branch_id ?? null;
   const isAllBranches = data.selectedBranch === null;
@@ -179,6 +206,10 @@ export default function AttendanceSummaryView({ data }: { data: SummaryData }) {
   );
   const miaRows = useMemo(
     () => data.rows.filter((r) => r.absence_kind === "mia").sort((a, b) => a.name.localeCompare(b.name)),
+    [data.rows],
+  );
+  const justifiedRows = useMemo(
+    () => data.rows.filter((r) => r.absence_kind === "justified").sort((a, b) => a.name.localeCompare(b.name)),
     [data.rows],
   );
 
@@ -403,7 +434,7 @@ export default function AttendanceSummaryView({ data }: { data: SummaryData }) {
             </div>
           </section>
 
-          {/* Right-column stack: Missing → On Leave → MIA */}
+          {/* Right-column stack: Missing → On Leave → MIA → Justified */}
           <div className="space-y-5">
             <AbsencePanel
               title={`Missing ${isToday ? "Today" : "This Day"}`}
@@ -412,6 +443,8 @@ export default function AttendanceSummaryView({ data }: { data: SummaryData }) {
               countLabel="missing"
               rows={missingRows}
               chip={null}
+              actionLabel={data.canJustify ? "Justify" : null}
+              onAction={data.canJustify ? openJustify : undefined}
             />
             <AbsencePanel
               title="On Leave"
@@ -428,10 +461,23 @@ export default function AttendanceSummaryView({ data }: { data: SummaryData }) {
               countLabel="MIA"
               rows={miaRows}
               chip={(row) => row.leave_type_code ?? "UL"}
+              actionLabel={data.canJustify ? "Justify" : null}
+              onAction={data.canJustify ? openJustify : undefined}
+            />
+            <AbsencePanel
+              title="Justified"
+              subtitle="No scan, but HR entered a reason"
+              accent="emerald"
+              countLabel="justified"
+              rows={justifiedRows}
+              chip={(row) => row.leave_type_code ?? "OK"}
+              actionLabel={data.canJustify ? "Edit" : null}
+              onAction={data.canJustify ? openJustify : undefined}
             />
           </div>
         </div>
       </div>
+      <JustificationModal target={justifyTarget} onClose={() => setJustifyTarget(null)} />
     </div>
   );
 }
@@ -670,9 +716,10 @@ function StatusPill({
 }
 
 const PANEL_ACCENT = {
-  rose:   { border: "border-rose-500/80",   bar: "bg-rose-500",   chipBg: "bg-rose-50",   chipBorder: "border-rose-200",   chipText: "text-rose-700",   dot: "bg-rose-500"   },
-  violet: { border: "border-violet-500/80", bar: "bg-violet-500", chipBg: "bg-violet-50", chipBorder: "border-violet-200", chipText: "text-violet-700", dot: "bg-violet-500" },
-  amber:  { border: "border-amber-500/80",  bar: "bg-amber-500",  chipBg: "bg-amber-50",  chipBorder: "border-amber-200",  chipText: "text-amber-700",  dot: "bg-amber-500"  },
+  rose:    { border: "border-rose-500/80",    bar: "bg-rose-500",    chipBg: "bg-rose-50",    chipBorder: "border-rose-200",    chipText: "text-rose-700",    dot: "bg-rose-500"    },
+  violet:  { border: "border-violet-500/80",  bar: "bg-violet-500",  chipBg: "bg-violet-50",  chipBorder: "border-violet-200",  chipText: "text-violet-700",  dot: "bg-violet-500"  },
+  amber:   { border: "border-amber-500/80",   bar: "bg-amber-500",   chipBg: "bg-amber-50",   chipBorder: "border-amber-200",   chipText: "text-amber-700",   dot: "bg-amber-500"   },
+  emerald: { border: "border-emerald-500/80", bar: "bg-emerald-500", chipBg: "bg-emerald-50", chipBorder: "border-emerald-200", chipText: "text-emerald-700", dot: "bg-emerald-500" },
 } as const;
 
 function AbsencePanel({
@@ -682,14 +729,18 @@ function AbsencePanel({
   countLabel,
   rows,
   chip,
+  actionLabel,
+  onAction,
 }: {
   title: string;
   subtitle: string;
   accent: keyof typeof PANEL_ACCENT;
   countLabel: string;
   rows: AttendanceRow[];
-  /** Tag rendered under each name (e.g. leave code). Return null to omit. */
   chip: ((row: AttendanceRow) => string | null) | null;
+  /** When set, renders a small button per row that fires onAction(row). */
+  actionLabel?: string | null;
+  onAction?: (row: AttendanceRow) => void;
 }) {
   const a = PANEL_ACCENT[accent];
   return (
@@ -738,7 +789,17 @@ function AbsencePanel({
                     </span>
                   )}
                 </div>
-                <span className={`w-2 h-2 rounded-full shrink-0 ${a.dot}`} aria-hidden="true" />
+                {actionLabel && onAction ? (
+                  <button
+                    type="button"
+                    onClick={() => onAction(row)}
+                    className="inline-flex items-center gap-1 h-7 px-2 rounded-md border border-slate-200 bg-white text-[10px] font-bold uppercase tracking-wider text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+                  >
+                    {actionLabel}
+                  </button>
+                ) : (
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${a.dot}`} aria-hidden="true" />
+                )}
               </li>
             );
           })

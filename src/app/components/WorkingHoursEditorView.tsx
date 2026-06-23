@@ -119,7 +119,7 @@ export default function WorkingHoursEditorView({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          branchStaffId: selected.id,
+          employmentId: selected.id,
           effectiveFrom,
           schedule: draft,
         }),
