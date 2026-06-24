@@ -10,7 +10,7 @@ import ClickUpTaskListModal, { type DrillTarget } from "@/app/components/ClickUp
 
 interface StatusSlice { status: string; color: string; count: number }
 interface DayBreakdown { total: number; statusBreakdown: StatusSlice[] }
-interface Branch { id: string; code: string; name: string; byDay: Record<string, DayBreakdown> }
+interface Branch { id: string; code: string; name: string; dashboardUrl: string | null; byDay: Record<string, DayBreakdown> }
 
 type Payload =
   | { configured: false }
@@ -34,11 +34,28 @@ function BranchCard({ branch, day, onPick }: { branch: Branch; day: string; onPi
   const segments = (bd?.statusBreakdown ?? []).map((s) => ({ label: s.status, value: s.count, color: s.color }));
   return (
     <section className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4 gap-2">
         <h3 className="text-sm font-semibold text-slate-900 truncate" title={`${branch.code} | ${branch.name}`}>
           {branch.code} | {branch.name}
         </h3>
-        <span className="text-xs font-medium text-slate-400 tabular-nums">{bd?.total ?? 0}</span>
+        <div className="flex items-center gap-2 shrink-0">
+          {branch.dashboardUrl && (
+            <a
+              href={branch.dashboardUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="text-slate-300 hover:text-indigo-600 cursor-pointer"
+              title="Open this branch's dashboard in ClickUp"
+            >
+              <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path d="M11 3a1 1 0 1 0 0 2h2.586l-6.293 6.293a1 1 0 1 0 1.414 1.414L15 6.414V9a1 1 0 1 0 2 0V4a1 1 0 0 0-1-1h-5Z" />
+                <path d="M5 5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-3a1 1 0 1 0-2 0v3H5V7h3a1 1 0 0 0 0-2H5Z" />
+              </svg>
+            </a>
+          )}
+          <span className="text-xs font-medium text-slate-400 tabular-nums">{bd?.total ?? 0}</span>
+        </div>
       </div>
       {bd && bd.total > 0 ? (
         <div className="flex items-center gap-4">
@@ -93,15 +110,10 @@ export default function OperationsDashboardPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Branches sorted by code, with the busiest (for the selected day) first.
+  // Branches sorted by branch id (B01 → B21).
   const branchesForDay = useMemo(() => {
     if (state.kind !== "ready" || !day) return [];
-    return [...state.data.branches].sort((a, b) => {
-      const ta = a.byDay[day]?.total ?? 0;
-      const tb = b.byDay[day]?.total ?? 0;
-      if (tb !== ta) return tb - ta;
-      return a.code.localeCompare(b.code);
-    });
+    return [...state.data.branches].sort((a, b) => a.code.localeCompare(b.code));
   }, [state, day]);
 
   if (status === "loading") {

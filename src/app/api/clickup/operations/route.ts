@@ -10,6 +10,7 @@ import {
   type ClickUpTaskView,
   type StatusSlice,
 } from "@/lib/clickup";
+import { branchDashboardUrl } from "@/lib/clickup-dashboards";
 
 export const dynamic = "force-dynamic";
 
@@ -73,8 +74,15 @@ export async function GET() {
           sectionSet.add(label);
         }
       }
-      return { id: branch.id, code: branch.code, name: branch.name, byDay };
+      return {
+        id: branch.id,
+        code: branch.code,
+        name: branch.name,
+        dashboardUrl: branchDashboardUrl(branch.code),
+        byDay,
+      };
     });
+    branches.sort((a, b) => a.code.localeCompare(b.code));
 
     const sections = [...sectionSet].sort((a, b) => {
       const ra = sectionSortKey(a);
