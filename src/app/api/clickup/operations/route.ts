@@ -45,8 +45,8 @@ export async function GET() {
     const perBranch = await mapLimit(branchSpaces, 3, async (b) => {
       let tasks: ClickUpTaskView[] | null;
       try {
-        // Open-only: operations mirrors ClickUp's pending-focused Branch Operations.
-        tasks = await getSpaceTasks(teamId, b.id, token, false);
+        // Include completed/closed tasks (where the API has them).
+        tasks = await getSpaceTasks(teamId, b.id, token, true);
       } catch {
         tasks = null;
       }
