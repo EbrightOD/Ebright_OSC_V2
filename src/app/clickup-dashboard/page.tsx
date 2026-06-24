@@ -61,23 +61,15 @@ export default function ClickUpDashboardPage() {
               <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">ClickUp Dashboards</h1>
               <p className="mt-1 text-sm text-slate-500">Branch task dashboards, imported from ClickUp</p>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <Link
-                href="/clickup-dashboard/views"
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white text-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-50 cursor-pointer transition-colors"
-              >
-                Embedded views
-              </Link>
-              <Link
-                href="/clickup-dashboard/operations"
-                className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-700 cursor-pointer transition-colors"
-              >
-                <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                  <path d="M15.5 2A1.5 1.5 0 0 1 17 3.5v13a1.5 1.5 0 0 1-1.5 1.5h-1A1.5 1.5 0 0 1 13 16.5v-13A1.5 1.5 0 0 1 14.5 2h1ZM9.5 8A1.5 1.5 0 0 1 11 9.5v7A1.5 1.5 0 0 1 9.5 18h-1A1.5 1.5 0 0 1 7 16.5v-7A1.5 1.5 0 0 1 8.5 8h1ZM3.5 12A1.5 1.5 0 0 1 5 13.5v3A1.5 1.5 0 0 1 3.5 18h-1A1.5 1.5 0 0 1 1 16.5v-3A1.5 1.5 0 0 1 2.5 12h1Z" />
-                </svg>
-                Operations by day
-              </Link>
-            </div>
+            <Link
+              href="/clickup-dashboard/operations"
+              className="shrink-0 inline-flex items-center gap-2 rounded-lg bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-700 cursor-pointer transition-colors"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path d="M15.5 2A1.5 1.5 0 0 1 17 3.5v13a1.5 1.5 0 0 1-1.5 1.5h-1A1.5 1.5 0 0 1 13 16.5v-13A1.5 1.5 0 0 1 14.5 2h1ZM9.5 8A1.5 1.5 0 0 1 11 9.5v7A1.5 1.5 0 0 1 9.5 18h-1A1.5 1.5 0 0 1 7 16.5v-7A1.5 1.5 0 0 1 8.5 8h1ZM3.5 12A1.5 1.5 0 0 1 5 13.5v3A1.5 1.5 0 0 1 3.5 18h-1A1.5 1.5 0 0 1 1 16.5v-3A1.5 1.5 0 0 1 2.5 12h1Z" />
+              </svg>
+              Operations by day
+            </Link>
           </header>
 
           {state.kind === "loading" && (
