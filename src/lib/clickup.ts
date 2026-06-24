@@ -308,15 +308,17 @@ export async function getOpenTasks(teamId: string, token: string): Promise<Click
 }
 
 /**
- * All tasks in one branch space INCLUDING completed/closed (10-min cache), so the
- * branch dashboards show complete vs pending. Keyed separately from open-only.
+ * Tasks in one branch space (10-min cache, keyed per space + scope).
+ * `includeClosed` (default true) controls whether completed/closed tasks are
+ * included — branch detail wants them (complete vs pending); the operations view
+ * uses open-only to mirror ClickUp's pending-focused Branch Operations boards.
  */
 export async function getSpaceTasks(
   teamId: string,
   spaceId: string,
   token: string,
+  includeClosed = true,
 ): Promise<ClickUpTaskView[]> {
-  return getCachedTasks(`space:${spaceId}:all`, () =>
-    fetchAllTasks(teamId, token, { spaceId, includeClosed: true }),
-  );
+  const key = `space:${spaceId}:${includeClosed ? "all" : "open"}`;
+  return getCachedTasks(key, () => fetchAllTasks(teamId, token, { spaceId, includeClosed }));
 }
