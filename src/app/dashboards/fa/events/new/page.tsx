@@ -1,10 +1,10 @@
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import AppShell from "@/app/components/AppShell";
-import FADashboardClient from "./FADashboardClient";
+import NewEventClient from "./NewEventClient";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "FA System" };
+export const metadata = { title: "New Event — FA System" };
 
 export default async function Page() {
   const session = await auth();
@@ -16,7 +16,7 @@ export default async function Page() {
       role={(session.user as { role?: string }).role ?? ""}
       name={session.user.name ?? null}
     >
-      <FADashboardClient />
+      <NewEventClient />
     </AppShell>
   );
 }

@@ -32,6 +32,7 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full overflow-hidden antialiased bg-slate-50`}
+      suppressHydrationWarning
     >
       <head>
         <link

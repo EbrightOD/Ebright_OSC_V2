@@ -1,10 +1,9 @@
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import AppShell from "@/app/components/AppShell";
-import FADashboardClient from "./FADashboardClient";
+import FAReportFormClient from "./FAReportFormClient";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "FA System" };
 
 export default async function Page() {
   const session = await auth();
@@ -16,7 +15,7 @@ export default async function Page() {
       role={(session.user as { role?: string }).role ?? ""}
       name={session.user.name ?? null}
     >
-      <FADashboardClient />
+      <FAReportFormClient />
     </AppShell>
   );
 }
