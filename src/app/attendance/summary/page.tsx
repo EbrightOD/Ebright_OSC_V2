@@ -12,10 +12,7 @@ import AttendanceSummaryView, {
 } from "@/app/components/AttendanceSummaryView";
 import { ShieldAlert } from "lucide-react";
 import { mytDayUtcBounds } from "@/lib/myt";
-import {
-  getResolvedSchedulesForDate,
-  type WeeklySchedule,
-} from "@/lib/schedule-history";
+import { type WeeklySchedule } from "@/lib/schedule-history";
 import { assignedBranchOnDay, rotationFor } from "@/lib/staff-rotation";
 
 // Leave code that means "unpaid / unexplained" — anyone with this leave-type
@@ -29,6 +26,10 @@ const ALLOWED_ROLE_TYPES = new Set(["superadmin", "ceo", "hr"]);
 const LATE_GRACE_MINUTES = 1;
 // "Scanner online" if a scan came in within this many minutes.
 const SCANNER_ONLINE_WINDOW_MIN = 10;
+// Business rule: a scan strictly before this MYT time doesn't count as a
+// check-out — it's treated as a duplicate scan / quick step-out. The person
+// stays "Currently In" until a scan at or after the cutoff happens.
+const CHECKOUT_EARLIEST_MYT = "14:00";
 
 const DAY_KEYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 type DayKey = (typeof DAY_KEYS)[number];
@@ -192,55 +193,66 @@ export default async function AttendanceSummaryPage({ searchParams }: PageProps)
     : null;
   const branchCode = selectedBranch?.branch_code ?? null;
 
-  // ── LOCAL: every active employment row (one per active staff member).
-  //          user_profile is the source of truth for names; employment joins
-  //          to branch/department/role and now carries working_hours_json
-  //          (synced from HRFS by /api/admin/sync-from-branchstaff).
-  const employmentRows = await prisma.employment.findMany({
-    where: {
-      status: "active",
-      employee_id: { not: null },
-      users: { status: "active", deleted_at: null },
-    },
-    select: {
-      employment_id: true,
-      user_id: true,
-      employee_id: true,
-      position: true,
-      working_hours_json: true,
-      branch: { select: { branch_code: true, location: true } },
-      department: { select: { department_name: true } },
-      users: {
-        select: {
-          role: { select: { role_type: true } },
-          user_profile: { select: { full_name: true } },
-        },
-      },
-    },
-  });
-  const allStaff: LocalStaffRow[] = employmentRows.map((e) => ({
-    id: e.employment_id,
-    user_id: e.user_id,
-    name: e.users.user_profile?.full_name ?? null,
-    branch: e.branch?.branch_code ?? null,
-    role: e.users.role?.role_type ?? null,
-    position: e.position ?? null,
-    department: e.department?.department_name ?? null,
-    location: e.branch?.location ?? null,
-    employeeId: e.employee_id,
-    workingHours:
-      (e.working_hours_json as Record<string, { start: string; end: string } | null> | null) ?? null,
+  // ── HRFS: BranchStaff is the source of truth for "who exists" — same DB
+  //         the Hikvision scans live in. Switching back from local employment
+  //         (which only had 48/165 staff synced) so every active person
+  //         appears here, with no dependency on a local sync running first.
+  const branchStaffRes = await queryEbrightHrfs<{
+    id: number;
+    name: string | null;
+    branch: string | null;
+    role: string | null;
+    position: string | null;
+    department: string | null;
+    location: string | null;
+    employeeId: string | null;
+    workingHours: Record<string, { start: string; end: string } | null> | null;
+  }>(
+    `SELECT id, name, branch, role, position, department, location,
+            "employeeId", "workingHours"
+       FROM public."BranchStaff"
+      WHERE status = 'Active'
+      ORDER BY name ASC`,
+  );
+  const allStaff: LocalStaffRow[] = branchStaffRes.rows.map((s) => ({
+    id: s.id,
+    // user_id no longer applies (no local row guaranteed) — use BranchStaff.id
+    // as a stable numeric identifier for React keys / urls.
+    user_id: s.id,
+    name: s.name,
+    branch: s.branch,
+    role: s.role,
+    position: s.position,
+    department: s.department,
+    location: s.location,
+    employeeId: s.employeeId,
+    workingHours: s.workingHours,
   }));
-  allStaff.sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
   const staffByEmpNo = new Map<string, LocalStaffRow>();
   for (const s of allStaff) {
     if (s.employeeId) staffByEmpNo.set(s.employeeId, s);
   }
 
-  // Versioned-schedule snapshot for selectedDate. Returns:
-  //   key present  → use that schedule (object) OR null=no schedule that date
-  //   key absent   → no history at all → fall back to cached workingHours
-  const schedulesByDate = await getResolvedSchedulesForDate(selectedDate);
+  // ── HRFS BranchStaffSchedule: resolved schedule per BranchStaff.id for
+  //    selectedDate. Picks the row with the greatest effectiveFrom that is
+  //    <= selectedDate. Keyed by BranchStaff.id so it lines up with the
+  //    staff records we just fetched.
+  const scheduleVersionRes = await queryEbrightHrfs<{
+    branch_staff_id: number;
+    schedule: Record<string, { start: string; end: string } | null>;
+  }>(
+    `SELECT DISTINCT ON ("branchStaffId")
+       "branchStaffId" AS branch_staff_id,
+       schedule
+     FROM public."BranchStaffSchedule"
+     WHERE "effectiveFrom" <= $1::date
+     ORDER BY "branchStaffId", "effectiveFrom" DESC`,
+    [selectedDate],
+  );
+  const schedulesByDate: Record<number, WeeklySchedule> = {};
+  for (const v of scheduleVersionRes.rows) {
+    schedulesByDate[v.branch_staff_id] = v.schedule as WeeklySchedule;
+  }
 
   // Resolve every staff's effective schedule for selectedDate, then keep only
   // those whose schedule has a non-null entry for today's dayKey. Rotation
@@ -377,16 +389,27 @@ export default async function AttendanceSummaryPage({ searchParams }: PageProps)
     return null;
   }
 
-  // ── LOCAL: HR-entered justifications for selectedDate ────────────────────
-  // A row here means "this person didn't scan today and HR has explained why".
-  // The Summary excludes them from Missing and counts them as Justified instead.
-  const justifications = await prisma.attendance_justification.findMany({
-    where: { date: new Date(selectedDate + "T00:00:00Z") },
-    select: { id: true, user_id: true, reason_category: true, note: true },
-  });
-  const justificationByUser = new Map<number, { id: number; reason: string; note: string | null }>();
-  for (const j of justifications) {
-    justificationByUser.set(j.user_id, { id: j.id, reason: j.reason_category, note: j.note });
+  // ── HRFS: HR-entered justifications for selectedDate ─────────────────────
+  // Reads HRFS public.attendance_justification (the spec's schema —
+  // emp_no/reason/evidence_url/...). Keyed by emp_no since that's how it
+  // joins to BranchStaff.employeeId. Same row drops the person from Missing
+  // and surfaces them in the Justify side box.
+  const justificationsRes = await queryEbrightHrfs<{
+    id: string;
+    emp_no: string | null;
+    reason: string | null;
+    evidence_url: string | null;
+  }>(
+    `SELECT id::text, emp_no, reason, evidence_url
+       FROM public.attendance_justification
+      WHERE just_date = $1::date`,
+    [selectedDate],
+  );
+  const justificationByEmpNo = new Map<string, { id: string; reason: string | null; evidence_url: string | null }>();
+  for (const j of justificationsRes.rows) {
+    if (j.emp_no) {
+      justificationByEmpNo.set(j.emp_no, { id: j.id, reason: j.reason, evidence_url: j.evidence_url });
+    }
   }
 
   // ── Expected rows (scheduled today, in scope) ────────────────────────────
@@ -396,8 +419,12 @@ export default async function AttendanceSummaryPage({ searchParams }: PageProps)
     const scan = s.employeeId ? scanByEmpNo.get(s.employeeId) ?? null : null;
 
     const checkInDate = scan?.first_event ?? null;
+    // Check-out must be strictly later than check-in AND at/after the
+    // CHECKOUT_EARLIEST_MYT cutoff. Earlier "second scans" are duplicates.
     const checkOutDate =
-      scan && scan.last_event.getTime() > scan.first_event.getTime()
+      scan
+      && scan.last_event.getTime() > scan.first_event.getTime()
+      && utcToMytHm(scan.last_event) >= CHECKOUT_EARLIEST_MYT
         ? scan.last_event
         : null;
 
@@ -413,17 +440,21 @@ export default async function AttendanceSummaryPage({ searchParams }: PageProps)
     let absenceKind: AbsenceKind = null;
     let leaveCode: string | null = null;
     let leaveName: string | null = null;
-    const just = justificationByUser.get(s.user_id) ?? null;
+    const just = s.employeeId ? justificationByEmpNo.get(s.employeeId) ?? null : null;
     if (!checkInDate && !checkOutDate) {
       if (just) {
         absenceKind = "justified";
         leaveCode = just.reason;
-        leaveName = just.note;
+        leaveName = just.evidence_url; // surfaces as the leave_type_name field
       } else {
         const lv = leaveFor(s);
         if (lv) {
           leaveCode = lv.code;
           leaveName = lv.name;
+          // Per spec: UL leaves are excluded from On Leave on the Summary
+          // (they appear in HR Dashboard's MIA card instead). For now we
+          // still tag them as on_leave so they're visible somewhere — switch
+          // to hiding entirely when MIA panel is removed.
           absenceKind = lv.code === MIA_LEAVE_CODE ? "mia" : "on_leave";
         } else {
           absenceKind = "missing";
@@ -442,9 +473,10 @@ export default async function AttendanceSummaryPage({ searchParams }: PageProps)
         : null;
 
     return {
-      // user_id is the real user_id (NOT employment_id) — the justification
-      // modal posts user_id and the modal pre-fill needs this lookup to work.
-      user_id: s.user_id,
+      // user_id slot now holds BranchStaff.id since staff list comes from HRFS.
+      // (No local user_id available without a separate lookup; not currently
+      // needed for display since the Justify modal is disabled in read-only.)
+      user_id: s.id,
       name: s.name ?? s.employeeId ?? `Staff #${s.id}`,
       employee_code: s.employeeId ?? null,
       department: s.department ?? s.location ?? null,
@@ -459,7 +491,11 @@ export default async function AttendanceSummaryPage({ searchParams }: PageProps)
       absence_kind: absenceKind,
       leave_type_code: leaveCode,
       leave_type_name: leaveName,
-      justification: just,
+      // Justify modal is disabled for now (read-only HRFS). Pre-fill data
+      // converted into the view's existing shape for display purposes only.
+      justification: just
+        ? { id: Number(just.id), reason: just.reason ?? "", note: just.evidence_url }
+        : null,
     };
   });
 
@@ -484,7 +520,10 @@ export default async function AttendanceSummaryPage({ searchParams }: PageProps)
 
       const checkInDate = scan.first_event;
       const checkOutDate =
-        scan.last_event.getTime() > scan.first_event.getTime() ? scan.last_event : null;
+        scan.last_event.getTime() > scan.first_event.getTime()
+        && utcToMytHm(scan.last_event) >= CHECKOUT_EARLIEST_MYT
+          ? scan.last_event
+          : null;
 
       visitorRows.push({
         user_id: staff.user_id,
@@ -510,6 +549,16 @@ export default async function AttendanceSummaryPage({ searchParams }: PageProps)
   }
 
   const rows: AttendanceRow[] = [...expectedRows, ...visitorRows];
+
+  // Sort by check-in time DESCENDING (latest scanners at the top — matches
+  // the reference portal's layout). People who didn't scan today sort to the
+  // bottom, secondary-sorted by name so the absent block has a stable order.
+  rows.sort((a, b) => {
+    if (a.check_in && b.check_in) return b.check_in.localeCompare(a.check_in);
+    if (a.check_in) return -1;
+    if (b.check_in) return 1;
+    return a.name.localeCompare(b.name);
+  });
 
   // ── Counters (assigned-only for absence math; visitors counted separately) ─
   const expectedScanned = expectedRows.filter(

@@ -22,6 +22,8 @@ import {
   Clock,
   CheckCircle2,
   Edit3,
+  Home,
+  ChevronRight,
 } from "lucide-react";
 import JustificationModal, { type JustificationTarget } from "@/app/components/JustificationModal";
 
@@ -122,12 +124,19 @@ export default function AttendanceSummaryView({ data }: { data: SummaryData }) {
 
   const openJustify = (row: AttendanceRow) => {
     if (!data.canJustify) return;
+    if (!row.employee_code) {
+      // Without an emp_no we can't write to HRFS attendance_justification
+      // (the natural key). Silently skip — the button shouldn't be visible
+      // for rows without an empNo anyway.
+      return;
+    }
     setJustifyTarget({
-      userId: row.user_id,
+      empNo: row.employee_code,
       employeeName: row.name,
-      employeeCode: row.employee_code,
+      branch: row.home_branch_code,
       date: data.selectedDate,
-      existing: row.justification ?? null,
+      // Existing reason text — null when no row exists, string when editing.
+      existingReason: row.justification?.reason ?? null,
     });
   };
 
@@ -204,10 +213,6 @@ export default function AttendanceSummaryView({ data }: { data: SummaryData }) {
     () => data.rows.filter((r) => r.absence_kind === "on_leave").sort((a, b) => a.name.localeCompare(b.name)),
     [data.rows],
   );
-  const miaRows = useMemo(
-    () => data.rows.filter((r) => r.absence_kind === "mia").sort((a, b) => a.name.localeCompare(b.name)),
-    [data.rows],
-  );
   const justifiedRows = useMemo(
     () => data.rows.filter((r) => r.absence_kind === "justified").sort((a, b) => a.name.localeCompare(b.name)),
     [data.rows],
@@ -217,7 +222,24 @@ export default function AttendanceSummaryView({ data }: { data: SummaryData }) {
 
   return (
     <div className="min-h-full bg-slate-50">
-      <div className="max-w-7xl mx-auto px-6 pt-6 pb-16 space-y-5">
+      <div className="max-w-7xl mx-auto px-6 pt-4 pb-16 space-y-5">
+        {/* Breadcrumb — same pattern as /attendance landing page. */}
+        <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-sm text-slate-500">
+          <Link
+            href="/home"
+            className="flex items-center gap-1 hover:text-slate-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 rounded"
+          >
+            <Home className="w-4 h-4" aria-hidden="true" />
+            <span>Home</span>
+          </Link>
+          <ChevronRight className="w-4 h-4 text-slate-400" aria-hidden="true" />
+          <Link href="/dashboards/hrms" className="hover:text-slate-900 transition-colors">HRMS</Link>
+          <ChevronRight className="w-4 h-4 text-slate-400" aria-hidden="true" />
+          <Link href="/attendance" className="hover:text-slate-900 transition-colors">Attendance</Link>
+          <ChevronRight className="w-4 h-4 text-slate-400" aria-hidden="true" />
+          <span className="text-slate-900 font-medium">Summary</span>
+        </nav>
+
         {/* Header */}
         <header className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-4">
@@ -434,7 +456,8 @@ export default function AttendanceSummaryView({ data }: { data: SummaryData }) {
             </div>
           </section>
 
-          {/* Right-column stack: Missing → On Leave → MIA → Justified */}
+          {/* Right-column stack: per spec — 3 boxes only (no MIA on Summary;
+              UL absences live on the HR Dashboard MIA card instead). */}
           <div className="space-y-5">
             <AbsencePanel
               title={`Missing ${isToday ? "Today" : "This Day"}`}
@@ -445,6 +468,7 @@ export default function AttendanceSummaryView({ data }: { data: SummaryData }) {
               chip={null}
               actionLabel={data.canJustify ? "Justify" : null}
               onAction={data.canJustify ? openJustify : undefined}
+              groupByBranch={isAllBranches}
             />
             <AbsencePanel
               title="On Leave"
@@ -455,18 +479,8 @@ export default function AttendanceSummaryView({ data }: { data: SummaryData }) {
               chip={(row) => row.leave_type_code ?? "Leave"}
             />
             <AbsencePanel
-              title="MIA"
-              subtitle="Unpaid / unexplained (UL)"
-              accent="amber"
-              countLabel="MIA"
-              rows={miaRows}
-              chip={(row) => row.leave_type_code ?? "UL"}
-              actionLabel={data.canJustify ? "Justify" : null}
-              onAction={data.canJustify ? openJustify : undefined}
-            />
-            <AbsencePanel
-              title="Justified"
-              subtitle="No scan, but HR entered a reason"
+              title="Justify"
+              subtitle="HR entered a reason / evidence"
               accent="emerald"
               countLabel="justified"
               rows={justifiedRows}
@@ -731,6 +745,7 @@ function AbsencePanel({
   chip,
   actionLabel,
   onAction,
+  groupByBranch = false,
 }: {
   title: string;
   subtitle: string;
@@ -741,6 +756,8 @@ function AbsencePanel({
   /** When set, renders a small button per row that fires onAction(row). */
   actionLabel?: string | null;
   onAction?: (row: AttendanceRow) => void;
+  /** Group rows under branch-code section headers (used on "All branches"). */
+  groupByBranch?: boolean;
 }) {
   const a = PANEL_ACCENT[accent];
   return (
@@ -764,45 +781,72 @@ function AbsencePanel({
             None.
           </li>
         ) : (
-          rows.map((row) => {
-            const tag = chip ? chip(row) : null;
-            return (
-              <li key={row.user_id} className="px-5 py-3 flex items-center gap-3">
-                <div className="rounded-full w-8 h-8 bg-slate-100 text-slate-600 font-bold text-[11px] flex items-center justify-center shrink-0">
-                  {row.name
-                    .split(" ")
-                    .map((p) => p[0])
-                    .filter(Boolean)
-                    .slice(0, 2)
-                    .join("")
-                    .toUpperCase()}
+          // Optionally group rows under branch headers. When grouping, the
+          // header text + count surface which branch each block belongs to.
+          (groupByBranch
+            ? Object.entries(
+                rows.reduce<Record<string, AttendanceRow[]>>((acc, r) => {
+                  const key = r.home_branch_code ?? "—";
+                  (acc[key] ??= []).push(r);
+                  return acc;
+                }, {}),
+              ).sort(([a], [b]) => a.localeCompare(b))
+            : [[null as string | null, rows] as const]
+          ).map(([branchKey, branchRows]) => (
+            <li key={branchKey ?? "_all"}>
+              {branchKey !== null && (
+                <div className="px-5 py-1.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                    {branchKey}
+                  </span>
+                  <span className="text-[10px] font-semibold text-slate-400">
+                    {branchRows.length}
+                  </span>
                 </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold text-slate-900 truncate">{row.name}</p>
-                  <p className="text-[11px] font-medium text-slate-500 mt-0.5 truncate">
-                    {row.position ?? "—"}
-                    {row.home_branch_code && <span className="ml-1 text-slate-400">· {row.home_branch_code}</span>}
-                  </p>
-                  {tag && (
-                    <span className={`mt-1 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${a.chipBg} ${a.chipText}`}>
-                      {tag}
-                    </span>
-                  )}
-                </div>
-                {actionLabel && onAction ? (
-                  <button
-                    type="button"
-                    onClick={() => onAction(row)}
-                    className="inline-flex items-center gap-1 h-7 px-2 rounded-md border border-slate-200 bg-white text-[10px] font-bold uppercase tracking-wider text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
-                  >
-                    {actionLabel}
-                  </button>
-                ) : (
-                  <span className={`w-2 h-2 rounded-full shrink-0 ${a.dot}`} aria-hidden="true" />
-                )}
-              </li>
-            );
-          })
+              )}
+              <ul className="divide-y divide-slate-100">
+                {branchRows.map((row) => {
+                  const tag = chip ? chip(row) : null;
+                  return (
+                    <li key={row.user_id} className="px-5 py-3 flex items-center gap-3">
+                      <div className="rounded-full w-8 h-8 bg-slate-100 text-slate-600 font-bold text-[11px] flex items-center justify-center shrink-0">
+                        {row.name
+                          .split(" ")
+                          .map((p) => p[0])
+                          .filter(Boolean)
+                          .slice(0, 2)
+                          .join("")
+                          .toUpperCase()}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-bold text-slate-900 truncate">{row.name}</p>
+                        <p className="text-[11px] font-medium text-slate-500 mt-0.5 truncate">
+                          {row.position ?? "—"}
+                          {row.home_branch_code && <span className="ml-1 text-slate-400">· {row.home_branch_code}</span>}
+                        </p>
+                        {tag && (
+                          <span className={`mt-1 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${a.chipBg} ${a.chipText}`}>
+                            {tag}
+                          </span>
+                        )}
+                      </div>
+                      {actionLabel && onAction ? (
+                        <button
+                          type="button"
+                          onClick={() => onAction(row)}
+                          className="inline-flex items-center gap-1 h-7 px-2 rounded-md border border-slate-200 bg-white text-[10px] font-bold uppercase tracking-wider text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+                        >
+                          {actionLabel}
+                        </button>
+                      ) : (
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${a.dot}`} aria-hidden="true" />
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </li>
+          ))
         )}
       </ul>
     </aside>

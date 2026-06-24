@@ -54,6 +54,7 @@ const primaryNav: NavItem[] = [
           { name: "Summary", href: "/attendance/summary" },
         ],
       },
+      { name: "HR Dashboard", href: "/induction/hr-dashboard" },
       { name: "Manpower Cost Report", href: "/manpower-cost-report" },
       { name: "Staff Directory", href: "/staff-directory" },
     ],
