@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import AppShell from "@/app/components/AppShell";
-import DonutChart from "@/app/components/DonutChart";
+import StatusDonut from "@/app/components/StatusDonut";
 import ClickUpTaskListModal, { type DrillTarget } from "@/app/components/ClickUpTaskListModal";
 
 interface StatusSlice { status: string; color: string; count: number }
@@ -42,7 +42,7 @@ function BranchCard({ branch, day, onPick }: { branch: Branch; day: string; onPi
       </div>
       {bd && bd.total > 0 ? (
         <div className="flex items-center gap-4">
-          <DonutChart data={segments} size={104} thickness={12} onSliceClick={onPick} />
+          <StatusDonut data={segments} size={104} onSliceClick={onPick} />
           <ul className="flex-1 min-w-0 space-y-1">
             {bd.statusBreakdown.map((s) => (
               <li key={s.status}>
