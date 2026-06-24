@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/nextauth";
 import { getBranchSpaces } from "@/lib/clickup";
-import { branchDashboardUrl } from "@/lib/clickup-dashboards";
 
 export const dynamic = "force-dynamic";
 
@@ -17,10 +16,7 @@ export async function GET() {
   if (!token || !teamId) return NextResponse.json({ configured: false });
 
   try {
-    const branches = (await getBranchSpaces(teamId, token)).map((b) => ({
-      ...b,
-      dashboardUrl: branchDashboardUrl(b.code),
-    }));
+    const branches = await getBranchSpaces(teamId, token);
     return NextResponse.json({ configured: true, branches });
   } catch {
     return NextResponse.json({ error: "Failed to load branches" }, { status: 502 });

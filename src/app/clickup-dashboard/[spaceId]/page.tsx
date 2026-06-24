@@ -11,7 +11,7 @@ import ClickUpTaskListModal, { type DrillTarget } from "@/app/components/ClickUp
 
 interface StatusSlice { status: string; color: string; count: number }
 interface Section { name: string; total: number; statusBreakdown: StatusSlice[] }
-interface Branch { id: string; code: string; name: string; dashboardUrl: string | null }
+interface Branch { id: string; code: string; name: string }
 
 type Payload =
   | { configured: false }
@@ -110,31 +110,14 @@ export default function BranchDashboardPage() {
             All dashboards
           </Link>
 
-          <header className="mb-8 flex items-start justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">
-                {state.kind === "ready" ? `Ebright | ${state.data.branch.code} | ${state.data.branch.name}` : "Branch dashboard"}
-              </h1>
-              {state.kind === "ready" && (
-                <p className="mt-1 text-sm text-slate-500">
-                  <span className="font-medium text-slate-700">{state.data.totalTaskCount.toLocaleString()}</span> tasks across {state.data.sections.length} sections
-                </p>
-              )}
-            </div>
-            {state.kind === "ready" && state.data.branch.dashboardUrl && (
-              <a
-                href={state.data.branch.dashboardUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="shrink-0 inline-flex items-center gap-2 rounded-lg bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-700 cursor-pointer transition-colors"
-                title="Open this branch's dashboard in ClickUp for the exact numbers"
-              >
-                Open in ClickUp
-                <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                  <path d="M11 3a1 1 0 1 0 0 2h2.586l-6.293 6.293a1 1 0 1 0 1.414 1.414L15 6.414V9a1 1 0 1 0 2 0V4a1 1 0 0 0-1-1h-5Z" />
-                  <path d="M5 5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-3a1 1 0 1 0-2 0v3H5V7h3a1 1 0 0 0 0-2H5Z" />
-                </svg>
-              </a>
+          <header className="mb-8">
+            <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">
+              {state.kind === "ready" ? `Ebright | ${state.data.branch.code} | ${state.data.branch.name}` : "Branch dashboard"}
+            </h1>
+            {state.kind === "ready" && (
+              <p className="mt-1 text-sm text-slate-500">
+                <span className="font-medium text-slate-700">{state.data.totalTaskCount.toLocaleString()}</span> tasks across {state.data.sections.length} sections
+              </p>
             )}
           </header>
 
