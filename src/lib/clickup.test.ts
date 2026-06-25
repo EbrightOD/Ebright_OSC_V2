@@ -9,6 +9,7 @@ import {
   parseBranchSpace,
   scheduleSection,
   sectionSortKey,
+  weekdayFromList,
   type ClickUpTaskView,
   type RosterEntry,
 } from "./clickup";
@@ -199,6 +200,16 @@ describe("sectionSortKey", () => {
       return 0;
     });
     expect(sorted).toEqual(["Wednesday", "Sunday", "Weekly & Daily", "Monthly", "Yearly"]);
+  });
+});
+
+describe("weekdayFromList", () => {
+  it("returns the canonical weekday for a day list, null otherwise", () => {
+    expect(weekdayFromList("Thursday")).toBe("Thursday");
+    expect(weekdayFromList("  wednesday ")).toBe("Wednesday");
+    expect(weekdayFromList("Closing")).toBeNull();
+    expect(weekdayFromList("9:15 AM Class")).toBeNull();
+    expect(weekdayFromList(null)).toBeNull();
   });
 });
 

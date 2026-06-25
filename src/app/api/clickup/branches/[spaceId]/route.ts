@@ -5,7 +5,7 @@ import {
   getBranchSpaces,
   getSpaceTasks,
   aggregateByStatus,
-  scheduleSection,
+  weekdayFromList,
   sectionSortKey,
   type ClickUpTaskView,
 } from "@/lib/clickup";
@@ -28,16 +28,17 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ spa
     const branch = branches.find((b) => b.id === spaceId);
     if (!branch) return NextResponse.json({ error: "Branch not found" }, { status: 404 });
 
-    const tasks = await getSpaceTasks(teamId, spaceId, token);
+    // Operational daily tasks: top-level only, incl. completed.
+    const tasks = await getSpaceTasks(teamId, spaceId, token, { subtasks: false });
 
-    // Aggregate day folders (e.g. "Wed | Executive", "Wed | Manager") into a
-    // single weekday section ("Wednesday"); period folders into their label.
+    // Day = the weekday LIST inside the Weekly & Daily folder (e.g. "Thursday").
     const bySection = new Map<string, ClickUpTaskView[]>();
     for (const task of tasks) {
-      const key = scheduleSection(task.folderName);
-      const list = bySection.get(key) ?? [];
+      const day = weekdayFromList(task.listName);
+      if (!day) continue;
+      const list = bySection.get(day) ?? [];
       list.push(task);
-      bySection.set(key, list);
+      bySection.set(day, list);
     }
 
     const sections = [...bySection.entries()]
@@ -59,7 +60,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ spa
     return NextResponse.json({
       configured: true,
       branch,
-      totalTaskCount: tasks.length,
+      totalTaskCount: sections.reduce((sum, s) => sum + s.total, 0),
       sections,
     });
   } catch {

@@ -230,7 +230,7 @@ export async function getBranchSpaces(teamId: string, token: string): Promise<Br
 async function fetchAllTasks(
   teamId: string,
   token: string,
-  opts: { spaceId?: string; includeClosed?: boolean } = {},
+  opts: { spaceId?: string; includeClosed?: boolean; subtasks?: boolean } = {},
 ): Promise<ClickUpTaskView[]> {
   const MAX_PAGES = 50; // 5000 tasks — a safety bound, not an expected limit
   const all: ClickUpTaskView[] = [];
@@ -238,7 +238,7 @@ async function fetchAllTasks(
   for (let page = 0; page < MAX_PAGES; page++) {
     const params = new URLSearchParams({
       include_closed: opts.includeClosed ? "true" : "false",
-      subtasks: "true",
+      subtasks: opts.subtasks === false ? "false" : "true",
       order_by: "due_date",
       page: String(page),
     });
@@ -317,8 +317,24 @@ export async function getSpaceTasks(
   teamId: string,
   spaceId: string,
   token: string,
-  includeClosed = true,
+  opts: { includeClosed?: boolean; subtasks?: boolean } = {},
 ): Promise<ClickUpTaskView[]> {
-  const key = `space:${spaceId}:${includeClosed ? "all" : "open"}`;
-  return getCachedTasks(key, () => fetchAllTasks(teamId, token, { spaceId, includeClosed }));
+  const includeClosed = opts.includeClosed ?? true;
+  const subtasks = opts.subtasks ?? true;
+  const key = `space:${spaceId}:${includeClosed ? "all" : "open"}:${subtasks ? "sub" : "top"}`;
+  return getCachedTasks(key, () => fetchAllTasks(teamId, token, { spaceId, includeClosed, subtasks }));
+}
+
+const WEEKDAY_CANONICAL: Record<string, string> = {
+  monday: "Monday", tuesday: "Tuesday", wednesday: "Wednesday", thursday: "Thursday",
+  friday: "Friday", saturday: "Saturday", sunday: "Sunday",
+};
+
+/**
+ * The operational daily tasks live in the "Weekly & Daily" folder as day LISTS
+ * ("Thursday", "Wednesday", …). Returns the canonical weekday for such a list
+ * name, or null for any other list (role/time-slot/period lists).
+ */
+export function weekdayFromList(listName: string | null | undefined): string | null {
+  return WEEKDAY_CANONICAL[(listName || "").trim().toLowerCase()] ?? null;
 }

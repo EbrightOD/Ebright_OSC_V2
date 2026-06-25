@@ -3,8 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/nextauth";
 import {
   getSpaceTasks,
-  scheduleSection,
-  sectionSortKey,
+  weekdayFromList,
   sortByDueDate,
   statusColor,
 } from "@/lib/clickup";
@@ -27,12 +26,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ spac
   const statusParam = req.nextUrl.searchParams.get("status");
 
   try {
-    const all = await getSpaceTasks(teamId, spaceId, token);
+    const all = await getSpaceTasks(teamId, spaceId, token, { subtasks: false });
     const filtered = all.filter((t) => {
-      const label = scheduleSection(t.folderName);
-      const sectionMatch =
-        !section ||
-        (section === "Other" ? sectionSortKey(label)[0] === 3 : label === section);
+      const day = weekdayFromList(t.listName);
+      const sectionMatch = !section || day === section;
       const statusMatch = !statusParam || (t.status || "no status") === statusParam;
       return sectionMatch && statusMatch;
     });
