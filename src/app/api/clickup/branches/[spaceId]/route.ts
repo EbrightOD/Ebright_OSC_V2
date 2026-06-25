@@ -28,8 +28,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ spa
     const branch = branches.find((b) => b.id === spaceId);
     if (!branch) return NextResponse.json({ error: "Branch not found" }, { status: 404 });
 
-    // Operational daily tasks: top-level only, incl. completed.
-    const tasks = await getSpaceTasks(teamId, spaceId, token, { subtasks: false });
+    // Weekly & Daily tasks incl. subtasks + completed (matches the branch board cards).
+    const tasks = await getSpaceTasks(teamId, spaceId, token, { subtasks: true });
 
     // Day = the weekday LIST inside the Weekly & Daily folder (e.g. "Thursday").
     const bySection = new Map<string, ClickUpTaskView[]>();
