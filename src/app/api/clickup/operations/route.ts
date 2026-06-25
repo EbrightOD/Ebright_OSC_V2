@@ -5,7 +5,7 @@ import {
   getBranchSpaces,
   getSpaceTasks,
   aggregateByStatus,
-  operationalDay,
+  scheduleSection,
   sectionSortKey,
   type ClickUpTaskView,
   type StatusSlice,
@@ -45,8 +45,8 @@ export async function GET() {
     const perBranch = await mapLimit(branchSpaces, 3, async (b) => {
       let tasks: ClickUpTaskView[] | null;
       try {
-        // Operational daily tasks: top-level only, incl. completed.
-        tasks = await getSpaceTasks(teamId, b.id, token, { includeClosed: true, subtasks: false });
+        // Overall (matches ClickUp Branch Operations): all day tasks incl. subtasks + completed.
+        tasks = await getSpaceTasks(teamId, b.id, token, { includeClosed: true, subtasks: true });
       } catch {
         tasks = null;
       }
@@ -62,12 +62,12 @@ export async function GET() {
         loadedBranches++;
         const grouped = new Map<string, ClickUpTaskView[]>();
         for (const task of tasks) {
-          // Day = the weekday LIST inside the Weekly & Daily folder. Skip other lists.
-          const day = operationalDay(task.folderName, task.listName);
-          if (!day) continue;
-          const list = grouped.get(day) ?? [];
+          // Day from the folder (e.g. "Wed | Executive" → Wednesday); non-day/period → "Other".
+          const label = scheduleSection(task.folderName);
+          const key = sectionSortKey(label)[0] === 3 ? "Other" : label;
+          const list = grouped.get(key) ?? [];
           list.push(task);
-          grouped.set(day, list);
+          grouped.set(key, list);
         }
         for (const [label, list] of grouped) {
           byDay[label] = { total: list.length, statusBreakdown: aggregateByStatus(list) };

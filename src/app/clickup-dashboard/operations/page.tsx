@@ -182,6 +182,7 @@ export default function OperationsDashboardPage() {
                           section: day,
                           status,
                           title: `${b.code} · ${day} · ${status}`,
+                          scope: "overall",
                         })
                       }
                     />

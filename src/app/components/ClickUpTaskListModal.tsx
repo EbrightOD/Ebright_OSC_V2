@@ -17,6 +17,7 @@ export interface DrillTarget {
   section: string;
   status: string | null;
   title: string;
+  scope?: "overall" | "daily";
 }
 
 function formatDue(due: number | null): { label: string; overdue: boolean } {
@@ -37,6 +38,7 @@ export default function ClickUpTaskListModal({ target, onClose }: { target: Dril
     setState({ kind: "loading" });
     const params = new URLSearchParams({ section: target.section });
     if (target.status) params.set("status", target.status);
+    if (target.scope) params.set("scope", target.scope);
     try {
       const res = await fetch(`/api/clickup/branches/${target.spaceId}/tasks?${params.toString()}`, { cache: "no-store" });
       if (!res.ok) return setState({ kind: "error" });

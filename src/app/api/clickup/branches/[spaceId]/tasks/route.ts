@@ -4,13 +4,19 @@ import { authOptions } from "@/lib/nextauth";
 import {
   getSpaceTasks,
   operationalDay,
+  scheduleSection,
+  sectionSortKey,
   sortByDueDate,
   statusColor,
 } from "@/lib/clickup";
 
 export const dynamic = "force-dynamic";
 
-/** Drill-down: tasks in a branch space filtered by schedule section and (optional) status. */
+/**
+ * Drill-down: tasks in a branch space for a section + (optional) status.
+ * scope="overall" matches the operations view (folder weekday, incl. subtasks);
+ * scope="daily" (default) matches branch detail (Weekly & Daily day list, top-level).
+ */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ spaceId: string }> }) {
   const { spaceId } = await params;
   const session = await getServerSession(authOptions);
@@ -24,12 +30,21 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ spac
 
   const section = req.nextUrl.searchParams.get("section");
   const statusParam = req.nextUrl.searchParams.get("status");
+  const overall = req.nextUrl.searchParams.get("scope") === "overall";
 
   try {
-    const all = await getSpaceTasks(teamId, spaceId, token, { subtasks: false });
+    const all = await getSpaceTasks(teamId, spaceId, token, { subtasks: overall });
     const filtered = all.filter((t) => {
-      const day = operationalDay(t.folderName, t.listName);
-      const sectionMatch = !section || day === section;
+      let sectionMatch: boolean;
+      if (!section) {
+        sectionMatch = true;
+      } else if (overall) {
+        const label = scheduleSection(t.folderName);
+        const key = sectionSortKey(label)[0] === 3 ? "Other" : label;
+        sectionMatch = key === section;
+      } else {
+        sectionMatch = operationalDay(t.folderName, t.listName) === section;
+      }
       const statusMatch = !statusParam || (t.status || "no status") === statusParam;
       return sectionMatch && statusMatch;
     });
