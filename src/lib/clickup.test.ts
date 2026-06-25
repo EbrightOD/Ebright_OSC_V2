@@ -11,8 +11,6 @@ import {
   sectionSortKey,
   weekdayFromList,
   operationalDay,
-  reclassifyByCurrentWeek,
-  currentWeekStart,
   type ClickUpTaskView,
   type RosterEntry,
 } from "./clickup";
@@ -24,7 +22,6 @@ function task(partial: Partial<ClickUpTaskView> & { id: string }): ClickUpTaskVi
     status: partial.status ?? "",
     statusColor: partial.statusColor ?? "",
     dueDate: partial.dueDate ?? null,
-    doneDate: partial.doneDate ?? null,
     priority: partial.priority ?? null,
     listName: partial.listName ?? "",
     folderName: partial.folderName ?? "",
@@ -86,7 +83,6 @@ describe("mapTask", () => {
         name: "Do the thing",
         status: { status: "in progress", color: "#abc" },
         due_date: "1700000000000",
-        date_done: "1700000500000",
         priority: { priority: "high" },
         list: { name: "Friday" },
         folder: { name: "Database and HRMS (Rahman)" },
@@ -98,7 +94,6 @@ describe("mapTask", () => {
       status: "in progress",
       statusColor: "#abc",
       dueDate: 1700000000000,
-      doneDate: 1700000500000,
       priority: "high",
       listName: "Friday",
       folderName: "Database and HRMS (Rahman)",
@@ -228,42 +223,6 @@ describe("operationalDay", () => {
     expect(operationalDay("[NEW] FT Coach (Wed - Sun) - Lee Ann", "Thursday")).toBeNull();
     expect(operationalDay("Thur | Executive", "Closing")).toBeNull();
     expect(operationalDay("01 | Weekly & Daily", "9:15 AM Class")).toBeNull();
-  });
-});
-
-describe("reclassifyByCurrentWeek", () => {
-  const weekStart = new Date("2026-06-22T00:00:00").getTime(); // Monday
-  const thisWeek = new Date("2026-06-24T09:00:00").getTime();
-  const lastWeek = new Date("2026-06-20T09:00:00").getTime();
-
-  it("keeps tasks completed this week as complete", () => {
-    const out = reclassifyByCurrentWeek(
-      [task({ id: "a", status: "complete", statusColor: "#0b6", doneDate: thisWeek })],
-      weekStart,
-    );
-    expect(out[0].status).toBe("complete");
-  });
-
-  it("turns tasks completed in a prior week back into pending", () => {
-    const out = reclassifyByCurrentWeek(
-      [
-        task({ id: "p", status: "pending", statusColor: "#e5484d" }),
-        task({ id: "old", status: "complete", statusColor: "#0b6", doneDate: lastWeek }),
-      ],
-      weekStart,
-    );
-    expect(out[1].status).toBe("pending");
-    expect(out[1].statusColor).toBe("#e5484d");
-  });
-});
-
-describe("currentWeekStart", () => {
-  it("returns Monday 00:00 of the week containing the date", () => {
-    const wed = new Date("2026-06-24T15:30:00");
-    const start = new Date(currentWeekStart(wed));
-    expect(start.getDay()).toBe(1); // Monday
-    expect(start.getHours()).toBe(0);
-    expect(start.getDate()).toBe(22);
   });
 });
 

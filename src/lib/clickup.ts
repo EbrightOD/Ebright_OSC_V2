@@ -6,7 +6,6 @@ export interface ClickUpTaskView {
   status: string;
   statusColor: string;
   dueDate: number | null;
-  doneDate: number | null;
   priority: string | null;
   listName: string;
   folderName: string;
@@ -40,8 +39,6 @@ interface RawTask {
   name: string;
   status?: { status?: string; color?: string } | null;
   due_date?: string | null;
-  date_done?: string | null;
-  date_closed?: string | null;
   priority?: { priority?: string } | null;
   list?: { name?: string } | null;
   folder?: { name?: string } | null;
@@ -147,37 +144,6 @@ export function statusColor(status: string, rawColor: string): string {
   return rawColor || "#94a3b8";
 }
 
-/** Epoch ms for Monday 00:00 of the current week (server local time). */
-export function currentWeekStart(now: Date = new Date()): number {
-  const d = new Date(now);
-  const mondayOffset = (d.getDay() + 6) % 7; // 0 = Monday
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() - mondayOffset);
-  return d.getTime();
-}
-
-/**
- * ClickUp's operations boards are current-week aware: a recurring task counts as
- * "complete" only if it was completed THIS week. A task marked complete but done
- * in a prior week is pending again for the current cycle. Reclassify those to the
- * workspace's pending status so the breakdown matches ClickUp.
- */
-export function reclassifyByCurrentWeek(
-  tasks: ClickUpTaskView[],
-  weekStartMs: number,
-): ClickUpTaskView[] {
-  const pendingRef = tasks.find((t) => /pending|to do|open|in progress/i.test(t.status));
-  const pendingStatus = pendingRef?.status ?? "pending";
-  const pendingColor = pendingRef?.statusColor || "#e5484d";
-  return tasks.map((t) => {
-    const isComplete = COMPLETED_STATUS.test(t.status);
-    if (isComplete && t.doneDate !== null && t.doneDate < weekStartMs) {
-      return { ...t, status: pendingStatus, statusColor: pendingColor };
-    }
-    return t;
-  });
-}
-
 export function aggregateByStatus(tasks: ClickUpTaskView[]): StatusSlice[] {
   const map = new Map<string, StatusSlice>();
   for (const t of tasks) {
@@ -209,7 +175,6 @@ export function mapTask(raw: RawTask): ClickUpTaskView {
     status: raw.status?.status ?? "",
     statusColor: raw.status?.color ?? "",
     dueDate: raw.due_date ? Number(raw.due_date) : null,
-    doneDate: raw.date_done ? Number(raw.date_done) : raw.date_closed ? Number(raw.date_closed) : null,
     priority: raw.priority?.priority ?? null,
     listName: raw.list?.name ?? "",
     folderName,
