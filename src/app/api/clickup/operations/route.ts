@@ -7,6 +7,8 @@ import {
   aggregateByStatus,
   scheduleSection,
   sectionSortKey,
+  reclassifyByCurrentWeek,
+  currentWeekStart,
   type ClickUpTaskView,
   type StatusSlice,
 } from "@/lib/clickup";
@@ -41,12 +43,14 @@ export async function GET() {
 
   try {
     const branchSpaces = await getBranchSpaces(teamId, token);
+    const weekStart = currentWeekStart();
 
     const perBranch = await mapLimit(branchSpaces, 3, async (b) => {
       let tasks: ClickUpTaskView[] | null;
       try {
         // Overall (matches ClickUp Branch Operations): all day tasks incl. subtasks + completed.
-        tasks = await getSpaceTasks(teamId, b.id, token, { includeClosed: true, subtasks: true });
+        const raw = await getSpaceTasks(teamId, b.id, token, { includeClosed: true, subtasks: true });
+        tasks = reclassifyByCurrentWeek(raw, weekStart);
       } catch {
         tasks = null;
       }

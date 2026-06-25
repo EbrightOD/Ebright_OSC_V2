@@ -8,6 +8,8 @@ import {
   sectionSortKey,
   sortByDueDate,
   statusColor,
+  reclassifyByCurrentWeek,
+  currentWeekStart,
 } from "@/lib/clickup";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +35,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ spac
   const overall = req.nextUrl.searchParams.get("scope") === "overall";
 
   try {
-    const all = await getSpaceTasks(teamId, spaceId, token, { subtasks: true });
+    const raw = await getSpaceTasks(teamId, spaceId, token, { subtasks: true });
+    const all = reclassifyByCurrentWeek(raw, currentWeekStart());
     const filtered = all.filter((t) => {
       let sectionMatch: boolean;
       if (!section) {
