@@ -156,20 +156,26 @@ export function currentWeekStart(now: Date = new Date()): number {
   return d.getTime();
 }
 
+const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
 /**
- * ClickUp's operations boards are current-week aware: a task counts as "complete"
- * only if it was completed THIS week. A task marked complete but done in a prior
- * week is a stale/past-cycle occurrence — ClickUp drops it from the current day's
- * board (so e.g. a recurring Friday task done last Friday isn't shown). Filter
- * those out so the day total matches ClickUp (completes done this week are kept).
+ * ClickUp's operations boards reflect the current recurrence cycle. A task
+ * completed in the IMMEDIATELY-PRIOR week is a recurring task that's due again
+ * this week, so ClickUp drops last week's completion (the current occurrence is
+ * pending). We drop only those. Completes done THIS week (done this cycle) and
+ * long-stale completes (older than last week — not part of the active weekly
+ * rotation, e.g. a one-off finished months ago) are kept as complete.
  */
 export function filterToCurrentCycle(
   tasks: ClickUpTaskView[],
   weekStartMs: number,
 ): ClickUpTaskView[] {
+  const prevWeekStart = weekStartMs - ONE_WEEK_MS;
   return tasks.filter((t) => {
     const isComplete = COMPLETED_STATUS.test(t.status);
-    if (isComplete && t.doneDate !== null && t.doneDate < weekStartMs) return false;
+    if (isComplete && t.doneDate !== null && t.doneDate >= prevWeekStart && t.doneDate < weekStartMs) {
+      return false; // completed last week → recurring, due again this week
+    }
     return true;
   });
 }

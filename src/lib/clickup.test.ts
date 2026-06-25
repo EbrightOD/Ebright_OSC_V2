@@ -234,29 +234,21 @@ describe("operationalDay", () => {
 describe("filterToCurrentCycle", () => {
   const weekStart = new Date("2026-06-22T00:00:00").getTime(); // Monday
   const thisWeek = new Date("2026-06-24T09:00:00").getTime();
-  const lastWeek = new Date("2026-06-20T09:00:00").getTime();
+  const lastWeek = new Date("2026-06-19T09:00:00").getTime(); // KD case
+  const longAgo = new Date("2026-04-18T09:00:00").getTime(); // Klang case
 
-  it("keeps pending tasks and completes done this week", () => {
+  it("keeps pending/na, this-week completes, and long-stale completes; drops only last-week completes", () => {
     const out = filterToCurrentCycle(
       [
         task({ id: "p", status: "pending" }),
-        task({ id: "c", status: "complete", doneDate: thisWeek }),
         task({ id: "n", status: "n/a" }),
+        task({ id: "thisWk", status: "complete", doneDate: thisWeek }),
+        task({ id: "lastWk", status: "complete", doneDate: lastWeek }),
+        task({ id: "april", status: "complete", doneDate: longAgo }),
       ],
       weekStart,
     );
-    expect(out.map((t) => t.id)).toEqual(["p", "c", "n"]);
-  });
-
-  it("drops completes done in a prior week (stale/past-cycle occurrences)", () => {
-    const out = filterToCurrentCycle(
-      [
-        task({ id: "p", status: "pending" }),
-        task({ id: "old", status: "complete", doneDate: lastWeek }),
-      ],
-      weekStart,
-    );
-    expect(out.map((t) => t.id)).toEqual(["p"]);
+    expect(out.map((t) => t.id)).toEqual(["p", "n", "thisWk", "april"]); // lastWk dropped
   });
 });
 
