@@ -5,7 +5,7 @@ import {
   getBranchSpaces,
   getSpaceTasks,
   aggregateByStatus,
-  weekdayFromList,
+  operationalDay,
   sectionSortKey,
   type ClickUpTaskView,
 } from "@/lib/clickup";
@@ -34,7 +34,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ spa
     // Day = the weekday LIST inside the Weekly & Daily folder (e.g. "Thursday").
     const bySection = new Map<string, ClickUpTaskView[]>();
     for (const task of tasks) {
-      const day = weekdayFromList(task.listName);
+      const day = operationalDay(task.folderName, task.listName);
       if (!day) continue;
       const list = bySection.get(day) ?? [];
       list.push(task);

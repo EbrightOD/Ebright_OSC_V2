@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/nextauth";
 import {
   getSpaceTasks,
-  weekdayFromList,
+  operationalDay,
   sortByDueDate,
   statusColor,
 } from "@/lib/clickup";
@@ -28,7 +28,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ spac
   try {
     const all = await getSpaceTasks(teamId, spaceId, token, { subtasks: false });
     const filtered = all.filter((t) => {
-      const day = weekdayFromList(t.listName);
+      const day = operationalDay(t.folderName, t.listName);
       const sectionMatch = !section || day === section;
       const statusMatch = !statusParam || (t.status || "no status") === statusParam;
       return sectionMatch && statusMatch;

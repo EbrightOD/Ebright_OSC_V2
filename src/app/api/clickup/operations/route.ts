@@ -5,7 +5,7 @@ import {
   getBranchSpaces,
   getSpaceTasks,
   aggregateByStatus,
-  weekdayFromList,
+  operationalDay,
   sectionSortKey,
   type ClickUpTaskView,
   type StatusSlice,
@@ -63,7 +63,7 @@ export async function GET() {
         const grouped = new Map<string, ClickUpTaskView[]>();
         for (const task of tasks) {
           // Day = the weekday LIST inside the Weekly & Daily folder. Skip other lists.
-          const day = weekdayFromList(task.listName);
+          const day = operationalDay(task.folderName, task.listName);
           if (!day) continue;
           const list = grouped.get(day) ?? [];
           list.push(task);

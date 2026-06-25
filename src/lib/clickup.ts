@@ -330,11 +330,24 @@ const WEEKDAY_CANONICAL: Record<string, string> = {
   friday: "Friday", saturday: "Saturday", sunday: "Sunday",
 };
 
-/**
- * The operational daily tasks live in the "Weekly & Daily" folder as day LISTS
- * ("Thursday", "Wednesday", …). Returns the canonical weekday for such a list
- * name, or null for any other list (role/time-slot/period lists).
- */
+/** Canonical weekday for a list named after a day ("Thursday"), else null. */
 export function weekdayFromList(listName: string | null | undefined): string | null {
   return WEEKDAY_CANONICAL[(listName || "").trim().toLowerCase()] ?? null;
+}
+
+// The operational daily checklist lives in the "Weekly & Daily" folder (e.g.
+// "01 | Weekly & Daily") as weekday lists. Other folders also have weekday-named
+// lists (e.g. coach folders), so we must match BOTH the folder and the list.
+const WEEKLY_DAILY_FOLDER = /weekly\s*&\s*daily/i;
+
+/**
+ * The weekday a task belongs to in a branch's operational dashboard: the weekday
+ * LIST inside the "Weekly & Daily" FOLDER. Returns null for anything else.
+ */
+export function operationalDay(
+  folderName: string | null | undefined,
+  listName: string | null | undefined,
+): string | null {
+  if (!WEEKLY_DAILY_FOLDER.test(folderName || "")) return null;
+  return weekdayFromList(listName);
 }

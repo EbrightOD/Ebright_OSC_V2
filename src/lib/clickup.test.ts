@@ -10,6 +10,7 @@ import {
   scheduleSection,
   sectionSortKey,
   weekdayFromList,
+  operationalDay,
   type ClickUpTaskView,
   type RosterEntry,
 } from "./clickup";
@@ -210,6 +211,18 @@ describe("weekdayFromList", () => {
     expect(weekdayFromList("Closing")).toBeNull();
     expect(weekdayFromList("9:15 AM Class")).toBeNull();
     expect(weekdayFromList(null)).toBeNull();
+  });
+});
+
+describe("operationalDay", () => {
+  it("returns the weekday only when the day list is in the Weekly & Daily folder", () => {
+    expect(operationalDay("01 | Weekly & Daily", "Thursday")).toBe("Thursday");
+    expect(operationalDay("01 | Weekly & Daily", "Wednesday")).toBe("Wednesday");
+  });
+  it("ignores weekday lists in other folders (e.g. coach folders)", () => {
+    expect(operationalDay("[NEW] FT Coach (Wed - Sun) - Lee Ann", "Thursday")).toBeNull();
+    expect(operationalDay("Thur | Executive", "Closing")).toBeNull();
+    expect(operationalDay("01 | Weekly & Daily", "9:15 AM Class")).toBeNull();
   });
 });
 
