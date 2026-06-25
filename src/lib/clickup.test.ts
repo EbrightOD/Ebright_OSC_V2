@@ -11,7 +11,7 @@ import {
   sectionSortKey,
   weekdayFromList,
   operationalDay,
-  reclassifyByCurrentWeek,
+  filterToCurrentCycle,
   currentWeekStart,
   type ClickUpTaskView,
   type RosterEntry,
@@ -231,29 +231,32 @@ describe("operationalDay", () => {
   });
 });
 
-describe("reclassifyByCurrentWeek", () => {
+describe("filterToCurrentCycle", () => {
   const weekStart = new Date("2026-06-22T00:00:00").getTime(); // Monday
   const thisWeek = new Date("2026-06-24T09:00:00").getTime();
   const lastWeek = new Date("2026-06-20T09:00:00").getTime();
 
-  it("keeps tasks completed this week as complete", () => {
-    const out = reclassifyByCurrentWeek(
-      [task({ id: "a", status: "complete", statusColor: "#0b6", doneDate: thisWeek })],
-      weekStart,
-    );
-    expect(out[0].status).toBe("complete");
-  });
-
-  it("turns tasks completed in a prior week back into pending", () => {
-    const out = reclassifyByCurrentWeek(
+  it("keeps pending tasks and completes done this week", () => {
+    const out = filterToCurrentCycle(
       [
-        task({ id: "p", status: "pending", statusColor: "#e5484d" }),
-        task({ id: "old", status: "complete", statusColor: "#0b6", doneDate: lastWeek }),
+        task({ id: "p", status: "pending" }),
+        task({ id: "c", status: "complete", doneDate: thisWeek }),
+        task({ id: "n", status: "n/a" }),
       ],
       weekStart,
     );
-    expect(out[1].status).toBe("pending");
-    expect(out[1].statusColor).toBe("#e5484d");
+    expect(out.map((t) => t.id)).toEqual(["p", "c", "n"]);
+  });
+
+  it("drops completes done in a prior week (stale/past-cycle occurrences)", () => {
+    const out = filterToCurrentCycle(
+      [
+        task({ id: "p", status: "pending" }),
+        task({ id: "old", status: "complete", doneDate: lastWeek }),
+      ],
+      weekStart,
+    );
+    expect(out.map((t) => t.id)).toEqual(["p"]);
   });
 });
 

@@ -157,24 +157,20 @@ export function currentWeekStart(now: Date = new Date()): number {
 }
 
 /**
- * ClickUp's operations boards are current-week aware: a recurring task counts as
- * "complete" only if it was completed THIS week. A task marked complete but done
- * in a prior week is pending again for the current cycle. Reclassify those to the
- * workspace's pending status so the breakdown matches ClickUp.
+ * ClickUp's operations boards are current-week aware: a task counts as "complete"
+ * only if it was completed THIS week. A task marked complete but done in a prior
+ * week is a stale/past-cycle occurrence — ClickUp drops it from the current day's
+ * board (so e.g. a recurring Friday task done last Friday isn't shown). Filter
+ * those out so the day total matches ClickUp (completes done this week are kept).
  */
-export function reclassifyByCurrentWeek(
+export function filterToCurrentCycle(
   tasks: ClickUpTaskView[],
   weekStartMs: number,
 ): ClickUpTaskView[] {
-  const pendingRef = tasks.find((t) => /pending|to do|open|in progress/i.test(t.status));
-  const pendingStatus = pendingRef?.status ?? "pending";
-  const pendingColor = pendingRef?.statusColor || "#e5484d";
-  return tasks.map((t) => {
+  return tasks.filter((t) => {
     const isComplete = COMPLETED_STATUS.test(t.status);
-    if (isComplete && t.doneDate !== null && t.doneDate < weekStartMs) {
-      return { ...t, status: pendingStatus, statusColor: pendingColor };
-    }
-    return t;
+    if (isComplete && t.doneDate !== null && t.doneDate < weekStartMs) return false;
+    return true;
   });
 }
 

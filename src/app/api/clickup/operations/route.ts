@@ -7,7 +7,7 @@ import {
   aggregateByStatus,
   scheduleSection,
   sectionSortKey,
-  reclassifyByCurrentWeek,
+  filterToCurrentCycle,
   currentWeekStart,
   type ClickUpTaskView,
   type StatusSlice,
@@ -50,7 +50,7 @@ export async function GET() {
       try {
         // Overall (matches ClickUp Branch Operations): all day tasks incl. subtasks + completed.
         const raw = await getSpaceTasks(teamId, b.id, token, { includeClosed: true, subtasks: true });
-        tasks = reclassifyByCurrentWeek(raw, weekStart);
+        tasks = filterToCurrentCycle(raw, weekStart);
       } catch {
         tasks = null;
       }

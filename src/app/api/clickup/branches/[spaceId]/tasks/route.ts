@@ -8,7 +8,7 @@ import {
   sectionSortKey,
   sortByDueDate,
   statusColor,
-  reclassifyByCurrentWeek,
+  filterToCurrentCycle,
   currentWeekStart,
 } from "@/lib/clickup";
 
@@ -36,7 +36,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ spac
 
   try {
     const raw = await getSpaceTasks(teamId, spaceId, token, { subtasks: true });
-    const all = reclassifyByCurrentWeek(raw, currentWeekStart());
+    const all = filterToCurrentCycle(raw, currentWeekStart());
     const filtered = all.filter((t) => {
       let sectionMatch: boolean;
       if (!section) {
