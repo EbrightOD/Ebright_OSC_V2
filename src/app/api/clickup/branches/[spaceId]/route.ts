@@ -7,6 +7,8 @@ import {
   aggregateByStatus,
   operationalDay,
   sectionSortKey,
+  reclassifyByCurrentWeek,
+  currentWeekStart,
   type ClickUpTaskView,
 } from "@/lib/clickup";
 
@@ -29,7 +31,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ spa
     if (!branch) return NextResponse.json({ error: "Branch not found" }, { status: 404 });
 
     // Weekly & Daily tasks incl. subtasks + completed (matches the branch board cards).
-    const tasks = await getSpaceTasks(teamId, spaceId, token, { subtasks: true });
+    const raw = await getSpaceTasks(teamId, spaceId, token, { subtasks: true });
+    const tasks = reclassifyByCurrentWeek(raw, currentWeekStart());
 
     // Day = the weekday LIST inside the Weekly & Daily folder (e.g. "Thursday").
     const bySection = new Map<string, ClickUpTaskView[]>();
