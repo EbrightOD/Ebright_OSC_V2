@@ -230,6 +230,13 @@ export default function ClaimsView({
   const activeStep =
     cycleSteps.find((s) => s.day >= currentDay)?.day ?? cycleSteps[cycleSteps.length - 1].day;
   const isSubmissionDeadlineStep = currentDay <= 2;
+  
+  // During submission days (1-2), show last month's label for the reminder
+  const lastMonth = new Date(today);
+  lastMonth.setMonth(lastMonth.getMonth() - 1);
+  const lastMonthLabel = lastMonth.toLocaleString("en-US", { month: "long", year: "numeric" });
+  const reminderMonthLabel = isSubmissionDeadlineStep ? lastMonthLabel : monthLabel;
+  
   const cycleCardClass = isSubmissionDeadlineStep
     ? "bg-red-50 border-red-200"
     : "bg-white border-slate-200";
@@ -290,7 +297,9 @@ export default function ClaimsView({
               Monthly Claim Cycle
             </h2>
             <span className="text-slate-300">—</span>
-            <p className="text-sm font-semibold text-slate-800">{monthLabel}</p>
+            <p className="text-sm font-semibold text-slate-800">
+              {isSubmissionDeadlineStep ? `${reminderMonthLabel} Claims` : monthLabel}
+            </p>
             {cycleSteps.some((s) => s.day === currentDay) && (
               <span
                 className="inline-flex items-center rounded-full bg-red-100 text-red-700 px-3 py-1 text-xs font-semibold"
@@ -299,6 +308,11 @@ export default function ClaimsView({
               </span>
             )}
           </div>
+          {isSubmissionDeadlineStep && (
+            <p className="text-xs text-slate-500 text-center mb-4">
+              Timeline below shows {monthLabel} schedule
+            </p>
+          )}
 
           <div style={{ display: "flex", alignItems: "center", width: "100%" }}>
             {cycleSteps.map((step, i) => {
