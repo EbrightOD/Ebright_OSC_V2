@@ -1,8 +1,7 @@
+import { auth } from "@/auth";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth/next";
 import { ArrowLeft } from "lucide-react";
-import { authOptions } from "@/lib/nextauth";
 import { prisma } from "@/lib/prisma";
 import AppShell from "@/app/components/AppShell";
 import EmployeeForm from "@/app/components/EmployeeForm";
@@ -12,7 +11,7 @@ import { updateMyProfile } from "@/app/profile/actions";
 export const dynamic = "force-dynamic";
 
 export default async function EditMyProfilePage() {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.email) redirect("/login");
 
   const me = await prisma.users.findUnique({

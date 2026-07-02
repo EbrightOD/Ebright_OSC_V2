@@ -1,6 +1,6 @@
+import { auth } from "@/auth";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth/next";
 import type { ReactNode } from "react";
 import {
   Home,
@@ -14,7 +14,6 @@ import {
   Shield,
   Pencil,
 } from "lucide-react";
-import { authOptions } from "@/lib/nextauth";
 import { prisma } from "@/lib/prisma";
 import { displayNameFor, formatRoleLabel, getAvatarInitials } from "@/lib/roles";
 import { titleCaseName } from "@/lib/text";
@@ -40,7 +39,7 @@ export default async function ProfilePage({
 }: {
   searchParams: Promise<{ changed?: string; emailChanged?: string; updated?: string }>;
 }) {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.email) redirect("/login");
 
   const me = await prisma.users.findUnique({

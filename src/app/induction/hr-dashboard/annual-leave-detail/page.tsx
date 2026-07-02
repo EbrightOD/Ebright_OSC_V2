@@ -1,11 +1,9 @@
+import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { getServerSession } from "next-auth/next";
 import { ArrowLeft } from "lucide-react";
-import { authOptions } from "@/lib/nextauth";
 import { prisma } from "@/lib/prisma";
 import AppShell from "@/app/components/AppShell";
-import { HRMSSidebar } from "@/app/induction/components/HRMSSidebar";
 import { canManageInductions } from "@/app/induction/roles";
 import { getCombinedAnnualLeavesUpcoming } from "@/app/induction/queries";
 
@@ -16,7 +14,7 @@ export const metadata = {
 };
 
 export default async function AnnualLeaveDetailPage() {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.email) redirect("/login");
 
   const actor = await prisma.users.findUnique({
@@ -34,9 +32,7 @@ export default async function AnnualLeaveDetailPage() {
 
   return (
     <AppShell email={userEmail} role={userRole} name={userName}>
-      <div className="flex min-h-full bg-slate-50">
-        <HRMSSidebar canManageInductions={canManage} />
-        <div className="flex-1 min-w-0">
+      <div className="min-h-full bg-slate-50">
           <header className="bg-indigo-600 text-white px-6 py-5">
             <div className="max-w-6xl mx-auto">
               <Link
@@ -62,8 +58,8 @@ export default async function AnnualLeaveDetailPage() {
                   <tr>
                     <th scope="col" className="px-4 py-3 text-left font-medium">#</th>
                     <th scope="col" className="px-4 py-3 text-left font-medium">Name</th>
-                    <th scope="col" className="px-4 py-3 text-left font-medium">Department / Branch</th>
-                    <th scope="col" className="px-4 py-3 text-left font-medium">Duration / Type</th>
+                    <th scope="col" className="px-4 py-3 text-left font-medium">Email</th>
+                    <th scope="col" className="px-4 py-3 text-left font-medium">Type</th>
                     <th scope="col" className="px-4 py-3 text-left font-medium">Date</th>
                     <th scope="col" className="px-4 py-3 text-left font-medium">Source</th>
                   </tr>
@@ -72,7 +68,7 @@ export default async function AnnualLeaveDetailPage() {
                   {rows.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">
-                        No annual leave in the past week.
+                        No annual leave in the next 2 weeks.
                       </td>
                     </tr>
                   ) : (
@@ -105,7 +101,6 @@ export default async function AnnualLeaveDetailPage() {
               </table>
             </div>
           </div>
-        </div>
       </div>
     </AppShell>
   );

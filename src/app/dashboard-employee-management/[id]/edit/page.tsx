@@ -1,8 +1,7 @@
+﻿import { auth } from "@/auth";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth/next";
 import { ArrowLeft } from "lucide-react";
-import { authOptions } from "@/lib/nextauth";
 import AppShell from "@/app/components/AppShell";
 import EmployeeForm from "@/app/components/EmployeeForm";
 import { getEmployeeById, listBranches, listDepartments } from "@/lib/employeeQueries";
@@ -15,7 +14,7 @@ export default async function EditEmployeePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session) redirect("/login");
 
   const { id } = await params;

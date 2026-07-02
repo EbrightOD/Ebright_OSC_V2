@@ -69,8 +69,6 @@ export async function syncOnboardingCandidatesFromEbrightLeads(): Promise<SyncRe
   const result: SyncResult = { success: true, synced: 0, errors: [] };
 
   try {
-    console.info("[induction] Sync: starting from HRFS public.\"BranchStaff\"");
-
     // BranchStaff (PascalCase) on HRFS — must be double-quoted or Postgres
     // folds to lowercase and "relation does not exist".
     const hrfsResult = await queryEbrightHrfs<RawBranchStaff>(
@@ -81,9 +79,6 @@ export async function syncOnboardingCandidatesFromEbrightLeads(): Promise<SyncRe
     );
 
     const rows = hrfsResult.rows ?? [];
-    console.info(
-      `[induction] Sync: found ${rows.length} rows in BranchStaff`,
-    );
 
     const now = new Date();
 
@@ -133,9 +128,6 @@ export async function syncOnboardingCandidatesFromEbrightLeads(): Promise<SyncRe
       }
     }
 
-    console.info(
-      `[induction] Sync: complete. synced=${result.synced} errors=${result.errors.length}`,
-    );
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     result.success = false;
@@ -213,9 +205,6 @@ export async function syncMcRecordsFromEbrightLeads(): Promise<SyncResult> {
         result.errors.push(`MC ${row.name}: ${msg}`);
       }
     }
-    console.info(
-      `[induction] MC sync complete. synced=${result.synced} errors=${result.errors.length}`,
-    );
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     result.success = false;
@@ -261,9 +250,6 @@ export async function syncAnnualLeaveFromEbrightLeads(): Promise<SyncResult> {
         result.errors.push(`AL ${row.name}: ${msg}`);
       }
     }
-    console.info(
-      `[induction] AL sync complete. synced=${result.synced} errors=${result.errors.length}`,
-    );
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     result.success = false;
@@ -454,9 +440,6 @@ export async function syncLeaveTransactionsFromHrfs(): Promise<SyncResult> {
     }
 
     lastLeaveSyncAt = Date.now();
-    console.info(
-      `[induction] LeaveTransaction sync complete. synced=${result.synced} errors=${result.errors.length}`,
-    );
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     result.success = false;

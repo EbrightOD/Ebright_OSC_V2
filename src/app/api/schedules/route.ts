@@ -1,6 +1,5 @@
+import { auth } from "@/auth";
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/nextauth";
 import { prisma } from "@/lib/prisma";
 
 // The page treats a schedule as identified by `${branchName}_${startDate}` and
@@ -56,7 +55,7 @@ function parseBody(raw: unknown):
 // GET /api/schedules — return every schedule, newest first, in the shape the
 // page expects: { branch (full name), startDate, endDate, selections, notes, … }.
 export async function GET() {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.email) {
     return NextResponse.json(
       { success: false, error: "Unauthorised" },
@@ -93,7 +92,7 @@ export async function GET() {
 
 // POST /api/schedules — upsert by (branch_id, start_date).
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.email) {
     return NextResponse.json(
       { success: false, error: "Unauthorised" },

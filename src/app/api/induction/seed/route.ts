@@ -1,6 +1,5 @@
+import { auth } from "@/auth";
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/nextauth";
 import { prisma } from "@/lib/prisma";
 import { canManageInductions } from "@/app/induction/roles";
 import { randomBytes } from "node:crypto";
@@ -33,9 +32,18 @@ export async function POST() {
   if (process.env.NODE_ENV === "production") {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  // Second explicit gate: this route runs destructive deleteMany on the
+  // induction tables, so require an opt-in env flag too — a stray/misconfigured
+  // NODE_ENV alone must not be enough to wipe data on a shared DB.
+  if (process.env.ALLOW_INDUCTION_SEED !== "true") {
+    return NextResponse.json(
+      { error: "Seeding disabled. Set ALLOW_INDUCTION_SEED=true to enable." },
+      { status: 403 },
+    );
+  }
 
   try {
-    const session = await getServerSession(authOptions);
+    const session = await auth();
     if (!session?.user?.email) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }

@@ -1,0 +1,333 @@
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;600;700;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* === Ebright design system ============================================ *
+   * Plum palette: vertical gradient page (deep → light plum), Milk cards,
+   * Plum CTAs, Soft Lavender subtitles. Modern, elegant, game-like —
+   * NO pixel/retro fonts. Legacy token names are kept and repointed so
+   * existing components shift automatically.
+   * ===================================================================== */
+
+  /* Named palette */
+  --deep-plum:     #1A0B1F;   /* darkest gradient start                 */
+  --plum:          #371931;   /* primary tone, CTA buttons              */
+  --mid-plum:      #6B3060;   /* "in progress" badges, progress states  */
+  --light-plum:    #A06090;   /* gradient end, subtle accents           */
+  --almond-oil:    #ECE3BD;   /* card surface — warm creamy almond     */
+  --parchment:     #ECE3BD;   /* alias: every card/box uses this       */
+  --ebright-red:   #CB1B03;   /* brand red — LOGO ONLY                  */
+  --milk:          #EEEFEE;   /* alt-bright card (where needed)         */
+  --soft-lavender: #D4A8D4;   /* subtitles, secondary text on dark bg   */
+  --chalk-white:   #FFFFFF;   /* on CTA / saturated surfaces            */
+  --ink:           #371931;   /* dark text on parchment (= Plum)        */
+  --ink-soft:      #4E2B48;   /* dimmer dark text                       */
+
+  /* Brand legacy aliases — repointed to new palette */
+  --red:         var(--plum);
+  --red-bright:  #4A2042;
+  --red-dark:    #2A1228;
+  --yellow:      var(--soft-lavender);  /* labels/subtitles now lavender */
+  --yellow-dark: #B888B8;
+  --green:       #2db858;                /* kept for "✓ Done"            */
+  --green-dark:  #0a4a18;
+  --pixel-gold:  var(--soft-lavender);
+
+  /* Surfaces — legacy aliases now map onto the new palette */
+  --walnut:    var(--deep-plum);    /* old page bg name              */
+  --oak:       var(--plum);         /* alt panel                     */
+  --timber:    var(--almond-oil);   /* card → Almond Oil dark plum   */
+  --dark:      var(--deep-plum);    /* page bg                       */
+  --surface-0: var(--deep-plum);    /* deepest panel                 */
+  --surface-1: var(--plum);         /* alt panel                     */
+  --card:      var(--almond-oil);   /* default card bg               */
+  --surface-2: var(--almond-oil);   /* raised surface                */
+  --surface-3: rgba(236, 227, 189, 0.30); /* locked — almond @ 30%   */
+  --surface-4: rgba(236, 227, 189, 0.30);
+
+  /* Borders */
+  --border-1: var(--light-plum);    /* faint divider                 */
+  --border-2: var(--plum);          /* default card border           */
+  --border-3: var(--mid-plum);      /* emphasised border             */
+
+  /* Text */
+  --white:      var(--chalk-white);
+  --text-muted: rgba(26, 11, 31, 0.72);  /* on milk cards            */
+  --text-dim:   rgba(26, 11, 31, 0.55);
+
+  /* Type scale — micro labels common across pixel UI */
+  --fs-micro:  0.50rem;
+  --fs-mini:   0.55rem;
+  --fs-tiny:   0.60rem;
+  --fs-small:  0.70rem;
+
+  /* Spacing scale (4px base) — for reference; Tailwind utilities cover this */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+
+  /* Component sizing */
+  --bottomnav-h: 52px;
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  width: 100%; min-height: 100vh;
+  color: var(--white);
+  font-family: 'Nunito', sans-serif;
+  font-weight: 400;
+  overflow-x: hidden;
+  /* Top-to-bottom plum gradient applied to the whole document so every
+     route sits on the same elegant backdrop (Welcome screen still has its
+     classroom photo overlaid on top). */
+  background:
+    linear-gradient(180deg,
+      var(--deep-plum) 0%,
+      var(--plum)      33%,
+      var(--mid-plum)  66%,
+      var(--light-plum) 100%) fixed;
+}
+
+/* Fills the viewport ABOVE the fixed BottomNav so pages don't create an
+   extra scroll just to satisfy min-h-screen. */
+.min-h-page { min-height: calc(100vh - var(--bottomnav-h)); }
+.h-page     { height:     calc(100vh - var(--bottomnav-h)); }
+
+/* Page-level plum gradient — already applied to body, but kept as an
+   explicit utility so per-page sections that use it as a class still
+   work. Transparent so the body gradient shows through, which is what
+   we want for the unified vertical flow. */
+.bg-eb-walnut-gradient { background: transparent; }
+
+/* Type-scale helper classes (Tailwind arbitrary `text-[0.5rem]` etc.
+   appears 100+ times — these aliases let us route to design tokens
+   without disturbing JSX structure). */
+.text-micro { font-size: var(--fs-micro); }
+.text-mini  { font-size: var(--fs-mini); }
+.text-tiny  { font-size: var(--fs-tiny); }
+.text-small { font-size: var(--fs-small); }
+canvas, svg { image-rendering: pixelated; }
+
+/* CRT scanline overlay removed — doesn't fit the elegant plum theme. */
+
+/* Typography & component helpers — Nunito everywhere, no pixel fonts. */
+@layer components {
+  /* Big section headlines — Press Start 2P pixel font. */
+  .pixel-title {
+    font-family: "Press Start 2P", monospace;
+    color: var(--white);
+    line-height: 1.4;
+    letter-spacing: 0.02em;
+    text-shadow: 4px 4px 0 var(--deep-plum), 8px 8px 0 rgba(0, 0, 0, 0.45);
+  }
+  /* Subtitles / eyebrows — Nunito 700, soft lavender on the gradient.
+     Inside a Parchment card (.card-dark / bg-eb-almond-oil / bg-eb-parchment)
+     the colour automatically swaps to Plum so it stays readable. */
+  .pixel-eyebrow {
+    font-family: 'Nunito', sans-serif;
+    font-weight: 700;
+    color: var(--soft-lavender);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+  .card-dark .pixel-eyebrow,
+  [class*="bg-eb-almond-oil"] .pixel-eyebrow,
+  [class*="bg-eb-parchment"] .pixel-eyebrow {
+    color: var(--plum);
+  }
+  /* Primary CTA — Plum bg with Parchment text. */
+  .btn-pixel {
+    @apply inline-flex items-center gap-2 px-7 py-3.5 rounded-xl cursor-pointer;
+    background: var(--plum);
+    color: var(--parchment);
+    font-family: 'Nunito', sans-serif;
+    font-weight: 800;
+    box-shadow: 0 6px 18px rgba(26, 11, 31, 0.45);
+    transition: transform .15s, box-shadow .15s, background .15s;
+    border: none;
+  }
+  .btn-pixel:hover  { background: var(--mid-plum); transform: translateY(-1px); box-shadow: 0 8px 22px rgba(26,11,31,0.55); }
+  .btn-pixel:active { transform: translateY(1px); box-shadow: 0 3px 10px rgba(26,11,31,0.5); }
+  .btn-pixel:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; transform: none; }
+
+  /* Inverse CTA — Parchment bg with Plum text. */
+  .btn-pixel-yellow {
+    background: var(--parchment);
+    color: var(--plum);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.3);
+  }
+  .btn-pixel-yellow:hover  { background: #F5EDD0; }
+  .btn-pixel-yellow:active { box-shadow: 0 3px 10px rgba(0,0,0,0.35); }
+
+  /* Active card — Almond Oil pale yellow surface, dark ink text.
+     Sits visibly above the plum gradient with a soft shadow. */
+  .card-dark {
+    background: var(--almond-oil);
+    border: 1px solid rgba(26, 11, 31, 0.15);
+    color: var(--ink);
+    border-radius: 1rem;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.40);
+  }
+  /* Locked / muted card — translucent almond, lets the gradient bleed. */
+  .surface-card {
+    background: rgba(236, 227, 189, 0.25);
+    border: 1px solid rgba(236, 227, 189, 0.30);
+    color: var(--milk);
+    border-radius: 0.75rem;
+    backdrop-filter: blur(2px);
+  }
+}
+
+/* Quiz answer options — explicit CSS so hover state never breaks. */
+.quiz-option {
+  background: var(--parchment);
+  color: var(--plum);
+  border: 2px solid var(--plum);
+  border-radius: 6px;
+  padding: 12px;
+  width: 100%;
+  text-align: left;
+  font-weight: 700;
+  font-size: 0.875rem;
+  transition: background 0.15s, color 0.15s, opacity 0.15s;
+  cursor: pointer;
+}
+.quiz-option:hover:not(:disabled) {
+  background: var(--plum);
+  color: var(--parchment);
+}
+.quiz-option:disabled { cursor: not-allowed; }
+.quiz-option--correct {
+  background: rgba(45, 184, 88, 0.25);
+  border-color: var(--green);
+  color: var(--plum);
+}
+.quiz-option--picked-wrong {
+  background: rgba(107, 48, 96, 0.20);
+  border-color: var(--mid-plum);
+  color: var(--plum);
+}
+.quiz-option--dim {
+  opacity: 0.5;
+  background: var(--parchment);
+  color: var(--plum);
+}
+
+/* ===== Contrast safety net =================================================
+ * STRICT RULE: text inside any Parchment-backed card (.card-dark) must always
+ * be the dark Plum ink, never light. We can't rewrite every legacy JSX class
+ * by hand, so we override the common Tailwind light-text utilities when they
+ * land inside a Parchment card. Buttons are scoped out so their own colours
+ * still apply.
+ *
+ * The [class*="..."] substring selectors catch ALL opacity variants
+ * (text-white, text-white/80, text-eb-chalk/55, etc.) regardless of class
+ * order in the JSX.
+ * ========================================================================== */
+.card-dark :where(
+  [class*="text-white"],
+  [class*="text-eb-chalk"],
+  [class*="text-eb-white"],
+  [class*="text-eb-milk"],
+  [class*="text-eb-soft-lavender"],
+  [class*="text-eb-yellow"],
+  [class*="text-eb-gold"],
+  [class*="text-yellow-300"]
+):not(button):not(.btn-pixel):not(.btn-pixel-yellow):not(.quiz-option) {
+  color: var(--ink) !important;
+}
+
+/* Gradient-context safety net — descriptions / paragraphs that use legacy
+   `text-eb-red` (which now resolves to dark Plum) become invisible on the
+   plum gradient. Force them to Milk so they read as light-on-dark.
+   Buttons and elements explicitly INSIDE a Parchment card are scoped out
+   so the in-card highlight colour can still be Plum where intended. */
+p[class*="text-eb-red"]:not(.card-dark *):not(button):not(.btn-pixel),
+a[class*="text-eb-red"]:not(.card-dark *):not(.btn-pixel),
+.text-eb-red:not(.card-dark *):not(span):not(button) {
+  color: var(--milk);
+}
+
+/* Same protection for elements on a Parchment surface that doesn't use the
+   .card-dark class (Page4Team uses bg-eb-almond-oil directly). */
+[class*="bg-eb-almond-oil"] :where(
+  [class*="text-white"],
+  [class*="text-eb-chalk"],
+  [class*="text-eb-white"],
+  [class*="text-eb-milk"],
+  [class*="text-yellow-300"]
+):not(button):not(.btn-pixel):not(.btn-pixel-yellow):not(.quiz-option) {
+  color: var(--ink) !important;
+}
+[class*="bg-eb-parchment"] :where(
+  [class*="text-white"],
+  [class*="text-eb-chalk"],
+  [class*="text-eb-white"],
+  [class*="text-eb-milk"],
+  [class*="text-yellow-300"]
+):not(button):not(.btn-pixel):not(.btn-pixel-yellow):not(.quiz-option) {
+  color: var(--ink) !important;
+}
+
+/* Animations */
+@keyframes bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+.bob { animation: bob 1.8s ease-in-out infinite; }
+.bob-slow { animation: bob 2.4s ease-in-out infinite; }
+
+@keyframes pulse-pixel {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+.pulse-pixel { animation: pulse-pixel 1.4s ease-in-out infinite; }
+
+@keyframes star-pop {
+  0% { transform: scale(0); }
+  60% { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+.star-pop { animation: star-pop 0.6s ease both; }
+
+@keyframes shake-x {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(2px); }
+}
+.shake-x { animation: shake-x 0.4s linear; }
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(15px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fade-up 0.4s ease both; }
+
+@keyframes twinkle {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 1; }
+}
+.twinkle { animation: twinkle 3s ease-in-out infinite; }
+
+@keyframes eb-unlock-pulse {
+  0%   { transform: scale(1);     box-shadow: 0 6px 0 var(--red-dark), 0 0 0 rgba(212,43,43,0); }
+  25%  { transform: scale(1.08);  box-shadow: 0 6px 0 var(--red-dark), 0 0 48px rgba(212,43,43,0.85); }
+  60%  { transform: scale(1);     box-shadow: 0 6px 0 var(--red-dark), 0 0 32px rgba(212,43,43,0.6); }
+  100% { transform: scale(1);     box-shadow: 0 6px 0 var(--red-dark), 0 0 24px rgba(212,43,43,0.45); }
+}
+.eb-unlock-pulse { animation: eb-unlock-pulse 1.2s cubic-bezier(0.34,1.56,0.64,1) both; }

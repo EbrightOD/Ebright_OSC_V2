@@ -32,7 +32,14 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full overflow-hidden antialiased bg-slate-50`}
+      suppressHydrationWarning
     >
+      <head>
+        <link
+          rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css"
+        />
+      </head>
       <body className="h-full overflow-hidden flex flex-col bg-slate-50">
         <Providers>{children}</Providers>
       </body>

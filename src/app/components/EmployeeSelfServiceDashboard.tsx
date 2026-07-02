@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import GreetingHeader from "./GreetingHeader";
 import {
   Check,
   ChevronRight,
@@ -145,13 +146,6 @@ export default function EmployeeSelfServiceDashboard({ userName, userEmail }: Pr
 
   const v = data?.viewer;
   const greetName = v?.nickName || v?.fullName?.split(" ")[0] || userName?.split(" ")[0] || "";
-  const positionLine = v?.position || "Employee self-service";
-
-  const today = useMemo(() => {
-    return new Date().toLocaleDateString("en-MY", {
-      weekday: "long", year: "numeric", month: "long", day: "numeric",
-    });
-  }, []);
 
   const [todos, setTodos] = useState<TodoItem[]>([
     { id: "timesheet",   title: "Submit March timesheet", done: true },
@@ -197,14 +191,7 @@ export default function EmployeeSelfServiceDashboard({ userName, userEmail }: Pr
     <div className="min-h-full bg-slate-50">
       <div className="max-w-7xl mx-auto px-6 pt-6 pb-12">
         {/* ── Header ─────────────────────────────────────────────────────── */}
-        <header className="mb-8">
-          <h1 className="text-3xl md:text-4xl font-semibold text-slate-900 tracking-tight">
-            Welcome{greetName ? `, ${greetName}` : ""} <span className="inline-block">👋</span>
-          </h1>
-          <p className="mt-1.5 text-sm text-slate-500">
-            {today}{positionLine ? ` · ${positionLine}` : ""}
-          </p>
-        </header>
+        <GreetingHeader name={greetName} style={{ marginBottom: 32 }} />
 
         {/* ── Metric cards ───────────────────────────────────────────────── */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">

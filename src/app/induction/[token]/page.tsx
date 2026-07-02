@@ -1,7 +1,6 @@
+﻿import { auth } from "@/auth";
 import Link from "next/link";
 import { AlertCircle } from "lucide-react";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/nextauth";
 import { prisma } from "@/lib/prisma";
 import PersonalInductionView from "@/app/induction/components/PersonalInductionView";
 import { canManageInductions } from "@/app/induction/roles";
@@ -9,6 +8,7 @@ import {
   getInductionByToken,
   listAllSubstepTemplates,
 } from "@/app/induction/queries";
+import { getActiveAssignmentForUser } from "@/lib/workflow/queries";
 
 export const dynamic = "force-dynamic";
 
@@ -59,7 +59,7 @@ export default async function PersonalInductionPage({ params }: PageProps) {
     );
   }
 
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   let canMarkComplete = false;
   if (session?.user?.email) {
     const actor = await prisma.users.findUnique({
@@ -77,11 +77,18 @@ export default async function PersonalInductionPage({ params }: PageProps) {
   // Training. Filtered inside the view by the inductee's department.
   const substepTemplates = await listAllSubstepTemplates();
 
+  // Workflow Center PR1: surface the candidate's assigned department
+  // workflow (if any). Auto-assignment after Day 3 lands in PR2; for
+  // now this is populated only via manual assignment from the HR
+  // candidate detail page.
+  const workflowAssignment = await getActiveAssignmentForUser(result.profile.userId);
+
   return (
     <PersonalInductionView
       profile={result.profile}
       canMarkComplete={canMarkComplete}
       substepTemplates={substepTemplates}
+      workflowAssignment={workflowAssignment}
     />
   );
 }

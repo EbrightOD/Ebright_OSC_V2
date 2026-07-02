@@ -1,6 +1,5 @@
+import { auth } from "@/auth";
 import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/nextauth";
 import { prisma } from "@/lib/prisma";
 import AppShell from "@/app/components/AppShell";
 import LeaveRequestsView, {
@@ -12,8 +11,12 @@ import { getActiveDepartmentId, loadHodPending } from "./approval-queries";
 
 export const dynamic = "force-dynamic";
 
-export default async function LeavePage() {
-  const session = await getServerSession(authOptions);
+export default async function LeavePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>;
+}) {
+  const session = await auth();
   if (!session?.user?.email) redirect("/login");
 
 
@@ -28,15 +31,39 @@ export default async function LeavePage() {
 
   const me = await prisma.users.findUnique({
     where: { email: session.user.email },
-    select: { user_id: true },
+    select: {
+      user_id: true,
+      employment: {
+        where: { status: "active" },
+        take: 1,
+        select: { department: { select: { department_code: true, department_name: true } } },
+      },
+    },
   });
   if (!me) redirect("/login");
 
+  const userRole = (session.user as { role?: string } | undefined)?.role ?? "";
+  const userPosition = (session.user as { position?: string | null } | undefined)?.position ?? "";
+
+  const myDept = me.employment[0]?.department;
+  const deptCode = myDept?.department_code?.toUpperCase() ?? "";
+  const deptName = myDept?.department_name?.toLowerCase() ?? "";
+  const isHR = deptCode === "HR" || deptName.includes("human resource");
+  const viewOnly = userRole === "superadmin" || isHR;
+
   const requests = await prisma.leave_request.findMany({
-    where: { user_id: me.user_id },
+    where: viewOnly ? {} : { user_id: me.user_id },
     orderBy: { applied_at: "desc" },
     include: {
       leave_types: { select: { leave_type_code: true, name: true } },
+      users_leave_request_user_idTousers: viewOnly
+        ? {
+            select: {
+              email: true,
+              user_profile: { select: { full_name: true } },
+            },
+          }
+        : false,
     },
   });
 

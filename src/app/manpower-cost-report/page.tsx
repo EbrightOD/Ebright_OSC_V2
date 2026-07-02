@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { redirect } from "next/navigation";
-import { Home as HomeIcon, ChevronRight, Search, Calendar, Download, ChevronDown, Wallet } from "lucide-react";
+import { Home as HomeIcon, ChevronRight, Search, Calendar, Download, ChevronDown, Wallet, FileDown } from "lucide-react";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import AppShell from "@/app/components/AppShell";
 
 const REGIONS = [
@@ -64,13 +66,22 @@ interface ApiTotals {
   executiveRate: number;
 }
 
+interface Viewer {
+  name: string;
+  position: string | null;
+  employeeId: string | null;
+  branch: string;
+  isPT: boolean;
+  rate: number | null;
+}
+
 interface ApiResponse {
   success: boolean;
   staff: StaffRow[];
   totals: ApiTotals;
   availableWeeks: { start: string; end: string }[];
   isEmployeeView?: boolean;
-  viewer?: { name: string; position: string | null } | null;
+  viewer?: Viewer | null;
   error?: string;
 }
 
@@ -80,6 +91,25 @@ function fmtHrs(h: number): string {
   const hrs = Math.floor(h);
   const min = Math.round((h - hrs) * 60);
   return `${hrs}h ${min.toString().padStart(2, "0")}m`;
+}
+
+// Build a zero-data StaffRow from the viewer profile so the employee view can
+// render its full layout (profile card + KPIs + daily breakdown) even when
+// there are no finalized schedules for the selected month.
+function makeEmptyRow(viewer: Viewer | null): StaffRow {
+  return {
+    name: viewer?.name ?? "",
+    employeeId: viewer?.employeeId ?? null,
+    branch: viewer?.branch ?? "",
+    position: viewer?.position ?? null,
+    isPT: viewer?.isPT ?? false,
+    coachHrs: 0,
+    execHrs: 0,
+    totalHrs: 0,
+    rate: viewer?.rate ?? null,
+    totalPay: 0,
+    days: [],
+  };
 }
 
 // ─── Page Content ─────────────────────────────────────────────────────────────
@@ -104,7 +134,7 @@ function ManpowerCostReportContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isEmployeeView, setIsEmployeeView] = useState(false);
-  const [viewer, setViewer] = useState<{ name: string; position: string | null } | null>(null);
+  const [viewer, setViewer] = useState<Viewer | null>(null);
 
   // Fetch on month change
   useEffect(() => {
@@ -203,6 +233,225 @@ function ManpowerCostReportContent() {
     setBranchFilter("");
   }
 
+  // PDF export — opens the generated PDF in a new tab so the user can save
+  // or print from the browser's PDF viewer. Branches between the employee
+  // view (single profile + daily breakdown) and the finance view (summary
+  // + multi-staff table). Ported from the v1 project.
+  async function generatePDF() {
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+
+    // Try to load logo
+    let logoImg: string | null = null;
+    try {
+      const resp = await fetch("/ebright-logo.png");
+      if (resp.ok) {
+        const blob = await resp.blob();
+        logoImg = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.readAsDataURL(blob);
+        });
+      }
+    } catch { /* no logo available */ }
+
+    // Header bar
+    doc.setFillColor(30, 41, 59); // slate-800
+    doc.rect(0, 0, pageW, 28, "F");
+
+    let headerX = 14;
+    if (logoImg) {
+      doc.addImage(logoImg, "PNG", 14, 3, 55, 22);
+      headerX = 74;
+    }
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.text("MANPOWER COST REPORT", headerX, 14);
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    const periodLabel = weekFilter
+      ? `Week: ${weekStart} to ${weekEnd}`
+      : `Period: ${monthLabel}`;
+    const filterLabels = [periodLabel];
+    if (regionFilter) filterLabels.push(`Region: ${REGIONS.find(r => r.value === regionFilter)?.label || regionFilter}`);
+    if (branchFilter) filterLabels.push(`Branch: ${branchFilter}`);
+    if (viewTab !== "all") filterLabels.push(`Type: ${viewTab.toUpperCase()}`);
+    doc.text(filterLabels.join("  |  "), headerX, 21);
+
+    // Generated date on right
+    doc.setFontSize(8);
+    doc.text(`Generated: ${new Date().toLocaleDateString("en-MY")}`, pageW - 14, 21, { align: "right" });
+
+    let y = 36;
+
+    if (isEmployeeView) {
+      // Employee PDF: profile info + daily breakdown.
+      // Use the synthesized empty row when no schedules exist so the export
+      // still produces a complete, recognisable document.
+      const s = filteredStaff[0] ?? makeEmptyRow(viewer);
+      const eRate = execRate;
+      const isPT = s.isPT;
+
+      doc.setTextColor(30, 41, 59);
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.text(s.name || "—", 14, y);
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      y += 5;
+      const infoLine = [s.branch || "—", isPT ? "Part-Time" : "Full-Time"];
+      if (isPT && s.rate) infoLine.push(`Coach: RM${s.rate}/hr`, `Exec: RM${eRate}/hr`);
+      doc.text(infoLine.join("  |  "), 14, y);
+      y += 9;
+
+      const [pyr, pmn] = selectedMonth.split("-").map(Number);
+      const dow = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+      const numD = new Date(pyr, pmn, 0).getDate();
+      const allD = Array.from({ length: numD }, (_, i) => {
+        const d = i + 1;
+        const ds = `${pyr}-${String(pmn).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+        return { dayNum: d, date: ds, day: dow[new Date(pyr, pmn - 1, d).getDay()] };
+      });
+      const showDays = weekFilter
+        ? allD.filter(d => d.date >= weekStart && d.date <= weekEnd)
+        : allD;
+      const wMap: Record<string, StaffRow["days"][number]> = {};
+      s.days.forEach(d => { wMap[d.date] = d; });
+
+      const dHead = isPT
+        ? [["No.", "Day", "Date", "Coach Hr", "Rate", "Total", "Exec Hr", "Rate", "Total", "Total Hr", "Total Pay"]]
+        : [["No.", "Day", "Date", "Coach Hr", "Exec Hr", "Total Hr"]];
+
+      const dBody: string[][] = showDays.map(row => {
+        const e = wMap[row.date];
+        const worked = !!e;
+        if (isPT) {
+          const cp = worked ? e.coachHrs * (s.rate || 0) : 0;
+          const ep = worked ? e.execHrs * eRate : 0;
+          return [
+            String(row.dayNum), row.day.slice(0, 3), row.date,
+            worked ? fmtHrs(e.coachHrs) : "-",
+            worked && e.coachHrs > 0 ? `RM${s.rate}` : "-",
+            worked && cp > 0 ? `RM ${cp.toFixed(2)}` : "-",
+            worked ? fmtHrs(e.execHrs) : "-",
+            worked && e.execHrs > 0 ? `RM${eRate}` : "-",
+            worked && ep > 0 ? `RM ${ep.toFixed(2)}` : "-",
+            worked ? fmtHrs(e.totalHrs) : "-",
+            worked ? `RM ${(cp + ep).toFixed(2)}` : "-",
+          ];
+        }
+        return [
+          String(row.dayNum), row.day.slice(0, 3), row.date,
+          worked ? fmtHrs(e.coachHrs) : "-",
+          worked ? fmtHrs(e.execHrs) : "-",
+          worked ? fmtHrs(e.totalHrs) : "-",
+        ];
+      });
+
+      const coachPay = isPT && s.rate ? s.coachHrs * s.rate : 0;
+      const execPay = isPT ? s.execHrs * eRate : 0;
+      const dFooter: string[] = isPT
+        ? [
+            "Total", "", `${s.days.length} days`,
+            fmtHrs(s.coachHrs), "", `RM ${coachPay.toFixed(2)}`,
+            fmtHrs(s.execHrs), "", `RM ${execPay.toFixed(2)}`,
+            fmtHrs(s.totalHrs), `RM ${s.totalPay.toFixed(2)}`,
+          ]
+        : ["Total", "", `${s.days.length} days`, fmtHrs(s.coachHrs), fmtHrs(s.execHrs), fmtHrs(s.totalHrs)];
+      dBody.push(dFooter);
+
+      autoTable(doc, {
+        startY: y, head: dHead, body: dBody, theme: "grid",
+        headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: "bold", fontSize: 7 },
+        bodyStyles: { fontSize: 7 },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        didParseCell: (hookData) => {
+          if (hookData.section === "body" && hookData.row.index === dBody.length - 1) {
+            hookData.cell.styles.fillColor = [30, 41, 59];
+            hookData.cell.styles.textColor = 255;
+            hookData.cell.styles.fontStyle = "bold";
+          }
+        },
+        margin: { left: 14, right: 14 },
+      });
+    } else {
+      // Finance PDF: summary + staff table.
+      doc.setTextColor(30, 41, 59);
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.text("SUMMARY", 14, y);
+      y += 6;
+
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      const summaryLines = [
+        `Staff: ${totals.totalStaff} (PT: ${totals.ptCount} | FT: ${totals.ftCount})`,
+        `Total Hours: ${fmtHrs(totals.totalHrs)}    Coach Hours: ${fmtHrs(totals.totalCoachHrs)}    Exec Hours: ${fmtHrs(totals.totalExecHrs)}`,
+        `PT Cost: RM ${totals.totalPay.toFixed(2)}    Avg/PT: RM ${totals.ptCount > 0 ? (totals.totalPay / totals.ptCount).toFixed(2) : "0.00"}`,
+      ];
+      summaryLines.forEach(line => {
+        doc.text(line, 14, y);
+        y += 5;
+      });
+      y += 4;
+
+      const tableHead = viewTab === "ft"
+        ? [["Name", "Branch", "Type", "Coach Hrs", "Exec Hrs", "Total Hrs"]]
+        : [["Name", "Branch", "Type", "Coach Hrs", "Exec Hrs", "Total Hrs", "Rate", "Total Pay"]];
+
+      const tableBody: string[][] = filteredStaff.map(s => {
+        const row = [s.name, s.branch, s.isPT ? "PT" : "FT", fmtHrs(s.coachHrs), fmtHrs(s.execHrs), fmtHrs(s.totalHrs)];
+        if (viewTab !== "ft") {
+          row.push(s.isPT && s.rate ? `RM${s.rate}` : "-");
+          row.push(s.isPT ? `RM ${s.totalPay.toFixed(2)}` : "-");
+        }
+        return row;
+      });
+
+      const footerRow: string[] = [
+        `Total (${totals.totalStaff})`, "", "",
+        fmtHrs(totals.totalCoachHrs), fmtHrs(totals.totalExecHrs), fmtHrs(totals.totalHrs),
+      ];
+      if (viewTab !== "ft") {
+        footerRow.push("");
+        footerRow.push(`RM ${totals.totalPay.toFixed(2)}`);
+      }
+      tableBody.push(footerRow);
+
+      autoTable(doc, {
+        startY: y, head: tableHead, body: tableBody, theme: "grid",
+        headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: "bold", fontSize: 8 },
+        bodyStyles: { fontSize: 8 },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        didParseCell: (hookData) => {
+          if (hookData.section === "body" && hookData.row.index === tableBody.length - 1) {
+            hookData.cell.styles.fillColor = [30, 41, 59];
+            hookData.cell.styles.textColor = 255;
+            hookData.cell.styles.fontStyle = "bold";
+          }
+        },
+        margin: { left: 14, right: 14 },
+      });
+    }
+
+    // Footer
+    const totalPages = doc.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i);
+      doc.setFontSize(7);
+      doc.setTextColor(150);
+      doc.text("Ebright HRMS — Confidential", 14, pageH - 6);
+      doc.text(`Page ${i} of ${totalPages}`, pageW - 14, pageH - 6, { align: "right" });
+    }
+
+    const pdfBlob = doc.output("blob");
+    const url = URL.createObjectURL(pdfBlob);
+    window.open(url, "_blank");
+  }
+
   return (
     <div className="min-h-full bg-slate-50">
       <div className="max-w-7xl mx-auto px-6 pt-4 pb-12">
@@ -248,95 +497,90 @@ function ManpowerCostReportContent() {
           </div>
         </header>
 
-        {/* Toolbar */}
-        <div className="flex flex-wrap items-center gap-3 mb-6">
-          {!isEmployeeView && (
-            <>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  placeholder="Search name..."
-                  className="pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-700 focus:ring-2 focus:ring-blue-500/10 focus:border-blue-400 outline-none transition-all w-[180px]"
-                />
-              </div>
-
-              <ToolbarSelect
-                value={viewTab}
-                onChange={v => setViewTab(v as ViewTab)}
-                options={[
-                  { value: "all", label: "All Staff" },
-                  { value: "pt",  label: "Part-Time" },
-                  { value: "ft",  label: "Full-Time" },
-                ]}
+        {/* Toolbar — admin view only. In employee view the same controls live
+            on the right side of the profile card. */}
+        {!isEmployeeView && (
+          <div className="flex flex-wrap items-center gap-3 mb-6">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search name..."
+                className="pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-700 focus:ring-2 focus:ring-blue-500/10 focus:border-blue-400 outline-none transition-all w-[180px]"
               />
-            </>
-          )}
+            </div>
 
-          <ToolbarSelect
-            value={selectedMonth}
-            onChange={setSelectedMonth}
-            options={AVAILABLE_MONTHS}
-            icon={<Calendar className="w-4 h-4" />}
-          />
-
-          {availableWeeks.length > 0 && (
             <ToolbarSelect
-              value={weekFilter}
-              onChange={setWeekFilter}
+              value={viewTab}
+              onChange={v => setViewTab(v as ViewTab)}
               options={[
-                { value: "", label: "Full Month" },
-                ...availableWeeks.map((w, i) => {
-                  const sd = new Date(w.start + "T00:00:00").getDate();
-                  const ed = new Date(w.end + "T00:00:00").getDate();
-                  const mn = new Date(w.start + "T00:00:00").toLocaleString(
-                    "en-US", { month: "short" },
-                  );
-                  return {
-                    value: `${w.start}:::${w.end}`,
-                    label: `Wk${i + 1} (${sd}-${ed} ${mn})`,
-                  };
-                }),
+                { value: "all", label: "All Staff" },
+                { value: "pt",  label: "Part-Time" },
+                { value: "ft",  label: "Full-Time" },
               ]}
+            />
+
+            <ToolbarSelect
+              value={selectedMonth}
+              onChange={setSelectedMonth}
+              options={AVAILABLE_MONTHS}
               icon={<Calendar className="w-4 h-4" />}
             />
-          )}
 
-          {!isEmployeeView && (
-            <>
+            {availableWeeks.length > 0 && (
               <ToolbarSelect
-                value={regionFilter}
-                onChange={handleRegionChange}
+                value={weekFilter}
+                onChange={setWeekFilter}
                 options={[
-                  { value: "", label: "All Regions" },
-                  ...REGIONS.map(r => ({ value: r.value, label: r.label })),
+                  { value: "", label: "Full Month" },
+                  ...availableWeeks.map((w, i) => {
+                    const sd = new Date(w.start + "T00:00:00").getDate();
+                    const ed = new Date(w.end + "T00:00:00").getDate();
+                    const mn = new Date(w.start + "T00:00:00").toLocaleString(
+                      "en-US", { month: "short" },
+                    );
+                    return {
+                      value: `${w.start}:::${w.end}`,
+                      label: `Wk${i + 1} (${sd}-${ed} ${mn})`,
+                    };
+                  }),
+                ]}
+                icon={<Calendar className="w-4 h-4" />}
+              />
+            )}
+
+            <ToolbarSelect
+              value={regionFilter}
+              onChange={handleRegionChange}
+              options={[
+                { value: "", label: "All Regions" },
+                ...REGIONS.map(r => ({ value: r.value, label: r.label })),
+              ]}
+            />
+
+            {regionFilter && branchOptions.length > 0 && (
+              <ToolbarSelect
+                value={branchFilter}
+                onChange={setBranchFilter}
+                options={[
+                  { value: "", label: "All Branches" },
+                  ...branchOptions.map(b => ({ value: b, label: b })),
                 ]}
               />
+            )}
 
-              {regionFilter && branchOptions.length > 0 && (
-                <ToolbarSelect
-                  value={branchFilter}
-                  onChange={setBranchFilter}
-                  options={[
-                    { value: "", label: "All Branches" },
-                    ...branchOptions.map(b => ({ value: b, label: b })),
-                  ]}
-                />
-              )}
-
-              {hasActiveFilters && (
-                <button
-                  onClick={clearFilters}
-                  className="px-4 py-2.5 bg-red-50 border border-red-200 text-red-600 rounded-xl text-sm font-bold hover:bg-red-100 transition-all"
-                >
-                  Clear
-                </button>
-              )}
-            </>
-          )}
-        </div>
+            {hasActiveFilters && (
+              <button
+                onClick={clearFilters}
+                className="px-4 py-2.5 bg-red-50 border border-red-200 text-red-600 rounded-xl text-sm font-bold hover:bg-red-100 transition-all"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        )}
 
         {isEmployeeView ? (
           loading ? (
@@ -348,20 +592,19 @@ function ManpowerCostReportContent() {
             <div className="bg-red-50 border border-red-200 rounded-2xl p-6 text-center">
               <p className="text-red-600 font-medium">{error}</p>
             </div>
-          ) : filteredStaff.length === 0 ? (
-            <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
-              <p className="text-slate-400 font-medium">No data found for {monthLabel}.</p>
-              <p className="text-slate-300 text-sm mt-1">Make sure schedules are finalized for this month.</p>
-            </div>
           ) : (
             <EmployeeBreakdown
-              s={filteredStaff[0]}
+              s={filteredStaff[0] ?? makeEmptyRow(viewer)}
               selectedMonth={selectedMonth}
+              setSelectedMonth={setSelectedMonth}
               monthLabel={monthLabel}
               weekFilter={weekFilter}
+              setWeekFilter={setWeekFilter}
               weekStart={weekStart}
               weekEnd={weekEnd}
               execRate={execRate}
+              availableWeeks={availableWeeks}
+              onPdf={generatePDF}
             />
           )
         ) : (
@@ -410,7 +653,11 @@ function ManpowerCostReportContent() {
             <span className="mx-3 text-slate-300">|</span>
             <span className="font-bold text-slate-700">FT:</span> hours only (fixed salary)
           </p>
-          <button className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-bold hover:bg-red-700 transition-all flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={generatePDF}
+            className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-bold hover:bg-red-700 transition-all flex items-center gap-1.5 shrink-0"
+          >
             <Download className="w-3.5 h-3.5" />
             PDF
           </button>
@@ -489,19 +736,27 @@ function ManpowerCostReportContent() {
 function EmployeeBreakdown({
   s,
   selectedMonth,
+  setSelectedMonth,
   monthLabel,
   weekFilter,
+  setWeekFilter,
   weekStart,
   weekEnd,
   execRate,
+  availableWeeks,
+  onPdf,
 }: {
   s: StaffRow;
   selectedMonth: string;
+  setSelectedMonth: (v: string) => void;
   monthLabel: string;
   weekFilter: string;
+  setWeekFilter: (v: string) => void;
   weekStart: string;
   weekEnd: string;
   execRate: number;
+  availableWeeks: { start: string; end: string }[];
+  onPdf: () => void;
 }) {
   const [yr, mn] = selectedMonth.split("-").map(Number);
   const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -527,7 +782,7 @@ function EmployeeBreakdown({
     <>
       {/* Profile card */}
       <div className="bg-white rounded-2xl border border-slate-200 p-6 mb-6">
-        <div className="flex items-center gap-5">
+        <div className="flex items-center gap-5 flex-wrap">
           <div className="w-14 h-14 rounded-full bg-slate-800 flex items-center justify-center text-lg font-black text-white shrink-0">
             {initials}
           </div>
@@ -552,6 +807,44 @@ function EmployeeBreakdown({
                 </>
               )}
             </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 print:hidden">
+            <ToolbarSelect
+              value={selectedMonth}
+              onChange={setSelectedMonth}
+              options={AVAILABLE_MONTHS}
+              icon={<Calendar className="w-4 h-4" />}
+            />
+            {availableWeeks.length > 0 && (
+              <ToolbarSelect
+                value={weekFilter}
+                onChange={setWeekFilter}
+                options={[
+                  { value: "", label: "Full Month" },
+                  ...availableWeeks.map((w, i) => {
+                    const sd = new Date(w.start + "T00:00:00").getDate();
+                    const ed = new Date(w.end + "T00:00:00").getDate();
+                    const mn = new Date(w.start + "T00:00:00").toLocaleString(
+                      "en-US", { month: "short" },
+                    );
+                    return {
+                      value: `${w.start}:::${w.end}`,
+                      label: `Wk${i + 1} (${sd}-${ed} ${mn})`,
+                    };
+                  }),
+                ]}
+                icon={<Calendar className="w-4 h-4" />}
+              />
+            )}
+            <button
+              type="button"
+              onClick={onPdf}
+              aria-label="Export PDF"
+              title="Export PDF"
+              className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-red-600 text-white hover:bg-red-700 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500/30"
+            >
+              <FileDown className="w-4 h-4" aria-hidden="true" />
+            </button>
           </div>
         </div>
       </div>

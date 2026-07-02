@@ -1,10 +1,16 @@
 "use server";
+import { auth } from "@/auth";
 
 import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/nextauth";
 import { prisma } from "@/lib/prisma";
+import { getRequestBaseUrl } from "@/lib/baseUrl";
+
+// Transaction client type derived from the prisma singleton — avoids
+// importing the Prisma namespace, which some IDE TS servers fail to
+// resolve from @prisma/client v7's package exports even though tsc
+// builds clean.
+type TxClient = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 import { uploadToDrive } from "@/lib/drive";
 import { canManageInductions } from "@/app/induction/roles";
 import {
@@ -101,7 +107,7 @@ async function loadActorAndAuthorize(): Promise<
   | { ok: true; actor: { user_id: number; role_type: string | null } }
   | { ok: false; error: string }
 > {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.email) return { ok: false, error: "Not authenticated." };
 
   const actor = await prisma.users.findUnique({
@@ -193,7 +199,7 @@ export async function createInduction(
   const expiresAt = expiryFromNow();
 
   try {
-    const created = await prisma.$transaction(async (tx) => {
+    const created = await prisma.$transaction(async (tx: TxClient) => {
       const profile = await tx.induction_profile.create({
         data: {
           user_id: userId,
@@ -224,19 +230,7 @@ export async function createInduction(
       return profile;
     });
 
-    const employeeLabel = employee.user_profile?.full_name ?? employee.email;
-    console.info(
-      "[induction] mock email:",
-      JSON.stringify({
-        to: employee.email,
-        recipient: employeeLabel,
-        token,
-        link: `/induction/${token}`,
-        expiresAt: expiresAt.toISOString(),
-      }),
-    );
-
-    revalidatePath("/induction/control-centre");
+    revalidatePath("/induction/onboarding-dashboard");
 
     return { ok: true, inductionProfileId: created.id, token };
   } catch (e) {
@@ -279,7 +273,7 @@ export async function regenerateInductionToken(
     return { ok: false, error: `Could not regenerate token: ${msg}` };
   }
 
-  revalidatePath("/induction/control-centre");
+  revalidatePath("/induction/onboarding-dashboard");
   return { ok: true, token, expiresAt: expiresAt.toISOString() };
 }
 
@@ -326,7 +320,7 @@ export async function createInductionRequest(
       select: { id: true },
     });
     revalidatePath("/dashboards/hrms");
-    revalidatePath("/induction/control-centre");
+    revalidatePath("/induction/onboarding-dashboard");
     return { ok: true, requestId: created.id };
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown database error.";
@@ -392,7 +386,7 @@ export async function createInductionRequestForEbrightCandidate(
   });
 
   try {
-    const newUser = await prisma.$transaction(async (tx) => {
+    const newUser = await prisma.$transaction(async (tx: TxClient) => {
       // Ensure unique email — append source_id if the slug collides.
       let email = baseEmail;
       const existing = await tx.users.findUnique({ where: { email } });
@@ -485,7 +479,7 @@ export async function createBulkInductionRequests(
   }
 
   if (created > 0) {
-    revalidatePath("/induction/control-centre");
+    revalidatePath("/induction/onboarding-dashboard");
     revalidatePath("/induction/hr-dashboard");
     revalidatePath("/induction/hr-dashboard/onboarding-detail");
     revalidatePath("/induction/hr-dashboard/offboarding-detail");
@@ -534,16 +528,54 @@ export async function acceptInductionRequest(
 
   const existingProfile = await prisma.induction_profile.findUnique({
     where: { user_id: request.user_id },
-    select: { id: true },
+    select: { id: true, status: true, link_token: true },
   });
+
+  // New flow path: HR pre-created an induction_profile (status=Sent) via
+  // Save & Generate Link on the Employee form. First login created the
+  // pending request. Accept just promotes the profile to In Progress
+  // and marks the request accepted — no new steps to seed since the
+  // existing profile already has them.
   if (existingProfile) {
-    return {
-      ok: false,
-      error:
-        "This employee already has an induction profile. Regenerate its link from the profiles table instead.",
-    };
+    try {
+      await prisma.$transaction(async (tx: TxClient) => {
+        if (existingProfile.status === "Sent") {
+          await tx.induction_profile.update({
+            where: { id: existingProfile.id },
+            data: { status: "In Progress" },
+          });
+        }
+        await tx.induction_request.update({
+          where: { id: requestId },
+          data: {
+            status: "accepted",
+            accepted_at: new Date(),
+            induction_profile_id: existingProfile.id,
+          },
+        });
+      });
+
+      revalidatePath("/induction/onboarding-dashboard");
+      revalidatePath("/dashboards/hrms");
+      revalidatePath("/dashboard-employee-management");
+
+      const baseUrl = await getRequestBaseUrl();
+      const trainingLink = `${baseUrl}/induction/${existingProfile.link_token}`;
+      return {
+        ok: true,
+        trainingLink,
+        inductionProfileId: existingProfile.id,
+        token: existingProfile.link_token,
+      };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Unknown database error.";
+      return { ok: false, error: `Could not accept request: ${msg}` };
+    }
   }
 
+  // Legacy path: no pre-existing profile (the old request-first flow
+  // used by the EbrightLeads bulk-add buttons). Create the profile +
+  // steps + accept the request, as before.
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
   const startDate = request.user.employment[0]?.start_date ?? today;
@@ -553,7 +585,7 @@ export async function acceptInductionRequest(
   const templateSteps = WORKFLOW_TEMPLATES[templateName];
 
   try {
-    const profile = await prisma.$transaction(async (tx) => {
+    const profile = await prisma.$transaction(async (tx: TxClient) => {
       const created = await tx.induction_profile.create({
         data: {
           user_id: request.user_id,
@@ -591,21 +623,11 @@ export async function acceptInductionRequest(
       return created;
     });
 
-    revalidatePath("/induction/control-centre");
+    revalidatePath("/induction/onboarding-dashboard");
     revalidatePath("/dashboards/hrms");
 
-    const baseUrl = process.env.NEXTAUTH_URL ?? "";
+    const baseUrl = await getRequestBaseUrl();
     const trainingLink = `${baseUrl}/induction/${token}`;
-
-    console.info(
-      "[induction] mock email after accept:",
-      JSON.stringify({
-        to: request.user.email,
-        recipient: request.user.user_profile?.full_name ?? request.user.email,
-        token,
-        link: trainingLink,
-      }),
-    );
 
     return {
       ok: true,
@@ -616,6 +638,206 @@ export async function acceptInductionRequest(
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown database error.";
     return { ok: false, error: `Could not accept request: ${msg}` };
+  }
+}
+
+export interface DeclineInductionRequestResult {
+  ok: boolean;
+  error?: string;
+}
+
+/**
+ * Decline a pending induction request — HR/Admin only.
+ *
+ * Updates induction_request.status = "declined". The DB unique constraint
+ * (one open request per user where status <> 'completed') means a declined
+ * row keeps the user "blocked" until the row is removed or status changes
+ * again. That matches the spec's "removes from queue" semantics for the
+ * HR-facing list.
+ */
+export async function declineInductionRequest(
+  requestId: number,
+): Promise<DeclineInductionRequestResult> {
+  const auth = await loadActorAndAuthorize();
+  if (!auth.ok) return { ok: false, error: auth.error };
+
+  if (!Number.isFinite(requestId) || requestId <= 0) {
+    return { ok: false, error: "Invalid request id." };
+  }
+
+  const request = await prisma.induction_request.findUnique({
+    where: { id: requestId },
+    select: { id: true, status: true },
+  });
+  if (!request) return { ok: false, error: "Request not found." };
+  if (request.status !== "pending") {
+    return {
+      ok: false,
+      error: `Cannot decline a request with status "${request.status}".`,
+    };
+  }
+
+  try {
+    await prisma.induction_request.update({
+      where: { id: requestId },
+      data: { status: "declined" },
+    });
+
+    revalidatePath("/induction/onboarding-dashboard");
+    revalidatePath("/induction/onboarding-dashboard");
+    revalidatePath("/dashboards/hrms");
+
+    return { ok: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Unknown database error.";
+    return { ok: false, error: `Could not decline request: ${msg}` };
+  }
+}
+
+export interface AssignCandidateRoleParams {
+  profileId: number;
+  role: string;
+  departmentId: number;
+  branchId: number | null;
+  /** Manager the new hire reports to. NOT PERSISTED in this PR — schema has
+   *  no reports_to column on employment yet. Accepted for forward-compat
+   *  with future schema add. Logged for audit but otherwise ignored. */
+  reportsToUserId: number | null;
+}
+
+export interface AssignCandidateRoleResult {
+  ok: boolean;
+  error?: string;
+}
+
+/**
+ * Move a completed candidate out of the onboarding pipeline by promoting
+ * their employment record to the chosen permanent role. Admin-only — gated
+ * via the same loadActorAndAuthorize() that other mutations use, narrowed
+ * here to admin/superadmin specifically.
+ *
+ * What this does:
+ *  1. Verifies the profile exists, is Onboarding, and status is "Completed"
+ *  2. Updates the user's most-recent employment row: position = role,
+ *     department_id, branch_id, status = "active"
+ *  3. Marks induction_profile.status = "Assigned" so it drops out of
+ *     pipeline queries
+ *
+ * What this does NOT do (deferred):
+ *  - reportsToUserId is captured in the form but NOT persisted (no
+ *    `reports_to` column on employment yet — add via future schema PR)
+ *  - No audit log event yet (audit log subsystem is its own future PR)
+ *  - No email notification to the candidate
+ */
+export async function assignCandidateRole(
+  params: AssignCandidateRoleParams,
+): Promise<AssignCandidateRoleResult> {
+  const { profileId, role, departmentId, branchId, reportsToUserId } = params;
+
+  const auth = await loadActorAndAuthorize();
+  if (!auth.ok) return { ok: false, error: auth.error };
+
+  // Narrow further: only admin/superadmin can assign roles. canManageInductions
+  // (which loadActorAndAuthorize uses) includes "hr" and "od" too, but the
+  // spec says Assign Role is admin-only on this page.
+  const roleType = (auth.actor.role_type ?? "").toLowerCase();
+  if (roleType !== "admin" && roleType !== "superadmin") {
+    return { ok: false, error: "Only admin / superadmin can assign roles." };
+  }
+
+  if (!Number.isFinite(profileId) || profileId <= 0) {
+    return { ok: false, error: "Invalid profile id." };
+  }
+  if (!role.trim()) return { ok: false, error: "Role is required." };
+  if (!Number.isFinite(departmentId) || departmentId <= 0) {
+    return { ok: false, error: "Department is required." };
+  }
+
+  const profile = await prisma.induction_profile.findUnique({
+    where: { id: profileId },
+    select: {
+      id: true,
+      user_id: true,
+      induction_type: true,
+      status: true,
+    },
+  });
+  if (!profile) return { ok: false, error: "Induction profile not found." };
+  if (profile.induction_type === "Offboarding") {
+    return { ok: false, error: "Cannot assign a role to an offboarding profile." };
+  }
+  if (profile.status !== "Completed") {
+    return {
+      ok: false,
+      error: `Cannot assign a role until induction is Completed (current status: "${profile.status}").`,
+    };
+  }
+
+  // Find the user's most-recent employment row (active or onboarding).
+  // If none exists, we create one — the candidate's account was likely
+  // created via /register without an immediate employment row.
+  const existingEmployment = await prisma.employment.findFirst({
+    where: {
+      user_id: profile.user_id,
+      status: { in: ["active", "onboarding"] },
+    },
+    orderBy: { start_date: "desc" },
+    select: { employment_id: true },
+  });
+
+  try {
+    await prisma.$transaction(async (tx: TxClient) => {
+      if (existingEmployment) {
+        await tx.employment.update({
+          where: { employment_id: existingEmployment.employment_id },
+          data: {
+            position: role,
+            department_id: departmentId,
+            branch_id: branchId,
+            status: "active",
+          },
+        });
+      } else {
+        await tx.employment.create({
+          data: {
+            user_id: profile.user_id,
+            position: role,
+            department_id: departmentId,
+            branch_id: branchId,
+            status: "active",
+            start_date: new Date(),
+          },
+        });
+      }
+
+      await tx.induction_profile.update({
+        where: { id: profileId },
+        data: { status: "Assigned" },
+      });
+    });
+
+    console.info(
+      "[admin] assignCandidateRole:",
+      JSON.stringify({
+        profileId,
+        userId: profile.user_id,
+        role,
+        departmentId,
+        branchId,
+        reportsToUserId,
+        assignedBy: auth.actor.role_type,
+      }),
+    );
+
+    revalidatePath("/admin/onboarding");
+    revalidatePath("/induction/onboarding-dashboard");
+    revalidatePath("/induction/onboarding-dashboard");
+    revalidatePath("/dashboards/hrms");
+
+    return { ok: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Unknown database error.";
+    return { ok: false, error: `Could not assign role: ${msg}` };
   }
 }
 
@@ -648,7 +870,7 @@ export async function markStepCompleteByToken(
     return { ok: false, error: "This induction link has expired." };
   }
 
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.email) {
     return { ok: false, error: "Please sign in to mark steps complete." };
   }
@@ -692,7 +914,7 @@ export async function markStepCompleteByToken(
   }
 
   try {
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx: TxClient) => {
       await tx.induction_step.update({
         where: { id: stepId },
         data: {
@@ -739,17 +961,8 @@ export async function markStepCompleteByToken(
     return { ok: false, error: `Could not mark step complete: ${msg}` };
   }
 
-  console.info(
-    "[induction] mock notification:",
-    JSON.stringify({
-      step: step.title,
-      stepId: step.id,
-      notify: step.responsible_person?.email ?? "(no responsible person assigned)",
-    }),
-  );
-
   revalidatePath(`/induction/${token}`);
-  revalidatePath("/induction/control-centre");
+  revalidatePath("/induction/onboarding-dashboard");
   return { ok: true };
 }
 
@@ -803,7 +1016,7 @@ export async function submitStepEvidenceByToken(
     return { ok: false, error: "This induction link has expired." };
   }
 
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.email) {
     return { ok: false, error: "Please sign in to submit evidence." };
   }
@@ -857,7 +1070,7 @@ export async function submitStepEvidenceByToken(
   }
 
   try {
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx: TxClient) => {
       await tx.induction_step.update({
         where: { id: stepId },
         data: {
@@ -909,7 +1122,7 @@ export async function submitStepEvidenceByToken(
   }
 
   revalidatePath(`/induction/${token}`);
-  revalidatePath("/induction/control-centre");
+  revalidatePath("/induction/onboarding-dashboard");
   return { ok: true, fileId: evidenceFileId };
 }
 
@@ -925,6 +1138,26 @@ export async function submitSurveyResponse(
   responses: Record<string, string | number>,
 ): Promise<SurveySubmissionResult> {
   try {
+    // Authz: only the induction's own candidate or an induction manager may
+    // submit a survey response (action was previously unauthenticated).
+    const session = await auth();
+    if (!session?.user?.email) return { ok: false, error: "Not authenticated." };
+    const [actor, profile] = await Promise.all([
+      prisma.users.findUnique({
+        where: { email: session.user.email },
+        select: { user_id: true, role: { select: { role_type: true } } },
+      }),
+      prisma.induction_profile.findUnique({
+        where: { id: inductionProfileId },
+        select: { user_id: true },
+      }),
+    ]);
+    if (!profile) return { ok: false, error: "Induction profile not found." };
+    const isOwner = actor?.user_id === profile.user_id;
+    if (!isOwner && !canManageInductions(actor?.role?.role_type ?? null)) {
+      return { ok: false, error: "Not authorized to submit this survey." };
+    }
+
     const template = await prisma.survey_template.findUnique({
       where: { milestone },
     });
@@ -952,11 +1185,6 @@ export async function submitSurveyResponse(
         submitted_at: new Date(),
       },
     });
-
-    console.info(
-      "[induction] survey submitted:",
-      JSON.stringify({ inductionProfileId, milestone, score: sentimentScore }),
-    );
 
     return { ok: true, message: "Survey submitted." };
   } catch (error) {
@@ -1008,7 +1236,7 @@ export async function fetchInductionForManager(
     return { ok: false, error: "Invalid user id." };
   }
 
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.email) {
     return { ok: false, error: "Not authenticated." };
   }
@@ -1102,7 +1330,7 @@ export async function addSubstepTemplate(
       select: { id: true },
     });
     revalidatePath("/induction/onboarding-dashboard");
-    revalidatePath("/induction/control-centre");
+    revalidatePath("/induction/onboarding-dashboard");
     return { ok: true, id: created.id };
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Database error.";
@@ -1123,7 +1351,7 @@ export async function deleteSubstepTemplate(
   try {
     await prisma.induction_substep_template.delete({ where: { id } });
     revalidatePath("/induction/onboarding-dashboard");
-    revalidatePath("/induction/control-centre");
+    revalidatePath("/induction/onboarding-dashboard");
     return { ok: true };
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Database error.";
@@ -1165,7 +1393,7 @@ export async function setInductionDurationDays(
       select: { target_duration_days: true, workflow_template: true },
     });
     const effective = updated.target_duration_days ?? defaultDurationDays(updated.workflow_template);
-    revalidatePath("/induction/control-centre");
+    revalidatePath("/induction/onboarding-dashboard");
     revalidatePath("/induction/onboarding-dashboard");
     revalidatePath("/induction/hr-dashboard");
     return { ok: true, durationDays: effective };

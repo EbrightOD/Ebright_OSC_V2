@@ -54,18 +54,18 @@ const dashboards: DashboardCard[] = [
     icon: "📰",
     color: "bg-yellow-500",
     items: [
-      { name: "Content Manager", href: "#", icon: "✏️" },
-      { name: "Media", href: "#", icon: "🖼️" },
+      { name: "Lead", href: "/crm/lead", icon: "📞" },
+      { name: "Ticket", href: "/crm/ticket", icon: "🎫" },
     ],
   },
   {
     id: "sms",
     title: "SMS",
-    icon: "💬",
+    icon: "🧑‍🎓",
     color: "bg-indigo-500",
     items: [
-      { name: "Messages", href: "#", icon: "💌" },
-      { name: "Templates", href: "#", icon: "📧" },
+      { name: "Students", href: "#", icon: "🧑‍🎓" },
+      { name: "Enrollment", href: "#", icon: "📝" },
     ],
   },
   {

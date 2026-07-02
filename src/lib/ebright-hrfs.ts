@@ -7,32 +7,27 @@ const globalForPool = globalThis as unknown as {
 };
 
 function configSignature(): string {
-  return [
-    process.env.EBRIGHT_HRFS_HOST ?? "",
-    process.env.EBRIGHT_HRFS_PORT ?? "",
-    process.env.EBRIGHT_HRFS_USER ?? "",
-    process.env.EBRIGHT_HRFS_PASSWORD ?? "",
-    process.env.EBRIGHT_HRFS_DATABASE ?? "",
-  ].join("|");
+  return process.env.HRFS_DATABASE_URL ?? "";
 }
 
 function makePool(): Pool {
-  const host = process.env.EBRIGHT_HRFS_HOST;
-  const database = process.env.EBRIGHT_HRFS_DATABASE;
-  if (!host || !database) {
+  const connectionString = process.env.HRFS_DATABASE_URL;
+  if (!connectionString) {
     throw new Error(
-      `EBRIGHT_HRFS_* env vars missing (host=${host ?? "undefined"}, database=${database ?? "undefined"}). Restart dev server after editing .env.`,
+      "HRFS_DATABASE_URL env var missing. Restart dev server after editing .env.",
     );
   }
   return new Pool({
-    host,
-    port: parseInt(process.env.EBRIGHT_HRFS_PORT || "5433", 10),
-    user: process.env.EBRIGHT_HRFS_USER,
-    password: process.env.EBRIGHT_HRFS_PASSWORD,
-    database,
-    max: 5,
+    connectionString,
+    // HR Dashboard fires ~12 parallel queries (6 cards × 1-3 queries each),
+    // and the Summary/Report make 3-5 more — bumped from 5 to 20 so they
+    // don't queue past the connect timeout.
+    max: 20,
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 5000,
+    // Bumped from 5s — the MedicalLeave LEFT JOIN subquery is heavier than
+    // a plain leave fetch and was hitting the 5s pool-wait window on the
+    // 5th+ concurrent query.
+    connectionTimeoutMillis: 15000,
   });
 }
 

@@ -1,12 +1,10 @@
+import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { getServerSession } from "next-auth/next";
 import { ArrowLeft } from "lucide-react";
-import { authOptions } from "@/lib/nextauth";
 import { prisma } from "@/lib/prisma";
 import AppShell from "@/app/components/AppShell";
 import { BulkAddToQueueButton } from "@/app/induction/components/BulkAddToQueueButton";
-import { HRMSSidebar } from "@/app/induction/components/HRMSSidebar";
 import { canManageInductions } from "@/app/induction/roles";
 import { getCombinedUpcomingExits } from "@/app/induction/queries";
 
@@ -17,7 +15,7 @@ export const metadata = {
 };
 
 export default async function OffboardingDetailPage() {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.email) redirect("/login");
 
   const actor = await prisma.users.findUnique({
@@ -47,9 +45,7 @@ export default async function OffboardingDetailPage() {
 
   return (
     <AppShell email={userEmail} role={userRole} name={userName}>
-      <div className="flex min-h-full bg-slate-50">
-        <HRMSSidebar canManageInductions={canManage} />
-        <div className="flex-1 min-w-0">
+      <div className="min-h-full bg-slate-50">
           <header className="bg-rose-600 text-white px-6 py-5">
             <div className="max-w-6xl mx-auto">
               <Link
@@ -120,7 +116,6 @@ export default async function OffboardingDetailPage() {
 
             <BulkAddToQueueButton userIds={highlightedUserIds} accent="rose" />
           </div>
-        </div>
       </div>
     </AppShell>
   );

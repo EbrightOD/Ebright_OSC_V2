@@ -10,13 +10,17 @@ import {
   UserPlus,
   UserMinus,
   PiggyBank,
+  Users,
   Home,
   ChevronRight,
+  Sparkles,
+  Workflow,
 } from "lucide-react";
 
 type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
 
 const MANAGE_INDUCTION_ROLE_TYPES = new Set(["superadmin", "hr", "od"]);
+const WORKFLOW_CENTER_ROLE_TYPES = new Set(["superadmin", "admin", "hr", "od", "hod"]);
 
 interface HrmsModule {
   id: string;
@@ -67,36 +71,6 @@ const modules: HrmsModule[] = [
     accentHover: "group-hover:bg-amber-700",
   },
   {
-    id: "onboarding",
-    title: "Onboarding",
-    description: "Manage new employee inductions",
-    href: "/induction/onboarding-dashboard?type=onboarding",
-    Icon: UserPlus,
-    accent: "bg-emerald-600",
-    accentHover: "group-hover:bg-emerald-700",
-    requiredRoles: MANAGE_INDUCTION_ROLE_TYPES,
-  },
-  {
-    id: "offboarding",
-    title: "Offboarding",
-    description: "Manage employee exits",
-    href: "/induction/onboarding-dashboard?type=offboarding",
-    Icon: UserMinus,
-    accent: "bg-rose-600",
-    accentHover: "group-hover:bg-rose-700",
-    requiredRoles: MANAGE_INDUCTION_ROLE_TYPES,
-  },
-  {
-    id: "induction-control-centre",
-    title: "Induction Control Centre",
-    description: "Review pending requests and active inductions",
-    href: "/induction/control-centre",
-    Icon: UserPlus,
-    accent: "bg-sky-600",
-    accentHover: "group-hover:bg-sky-700",
-    requiredRoles: MANAGE_INDUCTION_ROLE_TYPES,
-  },
-  {
     id: "hr-dashboard",
     title: "HR Dashboard",
     description: "Overview of onboarding, offboarding, MC & leave",
@@ -114,6 +88,57 @@ const modules: HrmsModule[] = [
     Icon: PiggyBank,
     accent: "bg-teal-600",
     accentHover: "group-hover:bg-teal-700",
+  },
+  // Induction Control Centre tile removed in Phase D — induction management
+  // is now done directly from the Onboarding tile (HR onboarding dashboard).
+  {
+    id: "onboarding",
+    title: "Onboarding",
+    description: "Manage new employee inductions",
+    href: "/induction/onboarding-dashboard?type=onboarding",
+    Icon: UserPlus,
+    accent: "bg-emerald-600",
+    accentHover: "group-hover:bg-emerald-700",
+    requiredRoles: MANAGE_INDUCTION_ROLE_TYPES,
+  },
+  {
+    id: "offboarding",
+    title: "Offboarding",
+    description: "Manage employee exits",
+    href: "/dashboards/offboarding",
+    Icon: UserMinus,
+    accent: "bg-rose-600",
+    accentHover: "group-hover:bg-rose-700",
+    requiredRoles: MANAGE_INDUCTION_ROLE_TYPES,
+  },
+  {
+    id: "induction-training",
+    title: "Induction Training",
+    description: "Open the interactive 3-day training experience",
+    href: "/onboarding-preview/index.html",
+    Icon: Sparkles,
+    accent: "bg-pink-600",
+    accentHover: "group-hover:bg-pink-700",
+    requiredRoles: MANAGE_INDUCTION_ROLE_TYPES,
+  },
+  {
+    id: "workflow-center",
+    title: "Workflow Center",
+    description: "Manage department onboarding workflows",
+    href: "/dashboards/workflow-center",
+    Icon: Workflow,
+    accent: "bg-violet-600",
+    accentHover: "group-hover:bg-violet-700",
+    requiredRoles: WORKFLOW_CENTER_ROLE_TYPES,
+  },
+  {
+    id: "staff-directory",
+    title: "Staff Directory",
+    description: "Browse staff contacts and details",
+    href: "/staff-directory",
+    Icon: Users,
+    accent: "bg-indigo-600",
+    accentHover: "group-hover:bg-indigo-700",
   },
 ];
 

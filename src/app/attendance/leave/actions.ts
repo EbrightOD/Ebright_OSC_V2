@@ -1,8 +1,7 @@
 "use server";
+import { auth } from "@/auth";
 
 import { revalidatePath } from "next/cache";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/nextauth";
 import { prisma } from "@/lib/prisma";
 import { uploadToDrive } from "@/lib/drive";
 import path from "node:path";
@@ -52,7 +51,7 @@ export async function submitLeaveRequest(
   _prev: SubmitLeaveResult | null,
   formData: FormData,
 ): Promise<SubmitLeaveResult> {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.email) return { ok: false, error: "Not authenticated." };
 
   const user = await prisma.users.findUnique({

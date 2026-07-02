@@ -1,44 +1,58 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useActionState, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { submitLeaveRequest } from "@/app/attendance/leave/actions";
 import {
-  Home,
+  Home as HomeIcon,
   ChevronRight,
+  ChevronLeft,
+  Check,
+  Calendar as CalendarIcon,
   Umbrella,
-  X,
-  CalendarDays,
-  FileText,
-  Upload,
-  CheckCircle2,
-  Paperclip,
-  Info,
+  Stethoscope,
+  AlertTriangle,
+  Wallet,
   Tag,
+  CircleAlert,
+  CheckCircle2,
+  Loader2,
 } from "lucide-react";
+import { submitLeaveRequest } from "@/app/attendance/leave/actions";
 
 export interface LeaveTypeOption {
   id: number;
   code: string;
   name: string;
+  // Days remaining. null = unlimited / not tracked.
+  balance?: number | null;
 }
 
-const ACCENT = "#059669";
-const ACCENT_DARK = "#047857";
-const ACCENT_SOFT = "#ECFDF5";
-const ACCENT_RING = "#D1FAE5";
-const ACCENT_BORDER = "#A7F3D0";
-const ACCENT_TEXT = "#047857";
-const ACCENT_RED = "#E3172E";
+type Step = 1 | 2 | 3 | 4;
 
-function daysInclusive(start: string, end: string): number {
-  if (!start || !end) return 0;
-  const s = new Date(start);
-  const e = new Date(end);
-  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return 0;
-  if (e < s) return 0;
-  return Math.round((e.getTime() - s.getTime()) / 86400000) + 1;
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function isoDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function isWeekend(d: Date): boolean {
+  const dow = d.getDay();
+  return dow === 0 || dow === 6;
+}
+
+function workingDaysBetween(startISO: string, endISO: string): number {
+  if (!startISO || !endISO) return 0;
+  const s = new Date(startISO + "T00:00:00");
+  const e = new Date(endISO + "T00:00:00");
+  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime()) || e < s) return 0;
+  let count = 0;
+  for (let d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) {
+    if (!isWeekend(d)) count++;
+  }
+  return count;
 }
 
 function formatDays(n: number): string {
@@ -89,23 +103,18 @@ export default function LeaveFormView({
     new Date(endDate) >= new Date(startDate);
   const canSubmit = !!leaveTypeId && dateRangeValid;
 
-  const selectedTypeName = useMemo(
-    () => leaveTypes.find((t) => String(t.id) === leaveTypeId)?.name ?? "",
-    [leaveTypes, leaveTypeId],
+  const selectedType = useMemo(
+    () => leaveTypes.find((t) => t.id === typeId) ?? null,
+    [leaveTypes, typeId],
   );
+  const workingDays = workingDaysBetween(startISO ?? "", endISO ?? startISO ?? "");
 
-  const handleFile = (incoming: FileList | null) => {
-    if (!incoming || incoming.length === 0) return;
-    setFile(incoming[0]);
-  };
+  // Step gating
+  const canContinue1 = typeId !== null;
+  const canContinue2 = startISO !== null;
 
-  const removeFile = () => setFile(null);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!canSubmit || isPending) return;
-    setErrorMsg(null);
-
+  function handleSubmit() {
+    if (!selectedType || !startISO) return;
     const fd = new FormData();
     fd.append("leave_type_id", leaveTypeId);
     fd.append("start_date", startDate);
@@ -126,7 +135,8 @@ export default function LeaveFormView({
     });
   };
 
-  if (submitted) {
+  // ── Success screen ────────────────────────────────────────────────────────
+  if (state?.ok) {
     return (
       <SuccessScreen
         typeName={selectedTypeName}
@@ -147,173 +157,50 @@ export default function LeaveFormView({
     );
   }
 
-  const inputStyle: React.CSSProperties = {
-    width: "100%",
-    height: "44px",
-    padding: "0 16px",
-    borderRadius: "10px",
-    border: "1px solid #E5E7EB",
-    background: "#fff",
-    fontSize: "14px",
-    color: "#171717",
-    outline: "none",
-    transition: "border-color 0.15s, box-shadow 0.15s",
-  };
-
-  const handleFocus = (e: React.FocusEvent<HTMLElement>) => {
-    e.currentTarget.style.borderColor = ACCENT;
-    e.currentTarget.style.boxShadow = `0 0 0 4px ${ACCENT_RING}`;
-  };
-  const handleBlur = (e: React.FocusEvent<HTMLElement>) => {
-    e.currentTarget.style.borderColor = "#E5E7EB";
-    e.currentTarget.style.boxShadow = "none";
-  };
-
+  // ── Wizard ────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-full" style={{ backgroundColor: "#FAFAFA" }}>
-      <div style={{ maxWidth: "820px", margin: "0 auto", padding: "24px 24px 56px" }}>
-        {/* Breadcrumb */}
-        <nav
-          aria-label="Breadcrumb"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: "6px",
-            fontSize: "13px",
-            color: "#737373",
-            marginBottom: "24px",
-          }}
-        >
-          <Link href="/home" style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
-            <Home size={13} strokeWidth={2} aria-hidden="true" />
+    <div className="min-h-full bg-slate-50">
+      {/* Breadcrumb — left-aligned to match other pages */}
+      <div className="max-w-7xl mx-auto px-6 pt-4">
+        <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-sm text-slate-500 flex-wrap">
+          <Link href="/home" className="flex items-center gap-1 hover:text-slate-900 transition-colors">
+            <HomeIcon className="w-4 h-4" aria-hidden="true" />
             <span>Home</span>
           </Link>
-          <ChevronRight size={12} style={{ color: "#D4D4D4" }} aria-hidden="true" />
-          <Link href="/dashboards/hrms">HRMS</Link>
-          <ChevronRight size={12} style={{ color: "#D4D4D4" }} aria-hidden="true" />
-          <Link href="/attendance">Attendance</Link>
-          <ChevronRight size={12} style={{ color: "#D4D4D4" }} aria-hidden="true" />
-          <Link href="/attendance/leave">Leave</Link>
-          <ChevronRight size={12} style={{ color: "#D4D4D4" }} aria-hidden="true" />
-          <span style={{ color: "#171717", fontWeight: 500 }}>Apply</span>
+          <ChevronRight className="w-4 h-4 text-slate-400" aria-hidden="true" />
+          <Link href="/attendance/leave" className="hover:text-slate-900 transition-colors">Leave</Link>
+          <ChevronRight className="w-4 h-4 text-slate-400" aria-hidden="true" />
+          <span className="text-slate-900 font-medium">Apply</span>
         </nav>
+      </div>
 
-        {/* Form card */}
-        <form
-          onSubmit={handleSubmit}
-          style={{
-            backgroundColor: "#fff",
-            border: "1px solid #E5E7EB",
-            borderRadius: "20px",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-            overflow: "hidden",
-          }}
-        >
-          {/* Header */}
-          <div
-            style={{
-              position: "relative",
-              padding: "28px 32px 24px",
-              background: `linear-gradient(135deg, ${ACCENT_SOFT} 0%, #fff 60%)`,
-              borderBottom: "1px solid #F3F4F6",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-              <div
-                style={{
-                  width: "56px",
-                  height: "56px",
-                  borderRadius: "14px",
-                  display: "grid",
-                  placeItems: "center",
-                  backgroundColor: "#fff",
-                  border: `1px solid ${ACCENT_BORDER}`,
-                  boxShadow: `0 4px 12px ${ACCENT_RING}`,
-                }}
-              >
-                <Umbrella
-                  size={26}
-                  strokeWidth={2}
-                  style={{ color: ACCENT }}
-                  aria-hidden="true"
-                />
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <h1
-                  style={{
-                    fontSize: "22px",
-                    fontWeight: 700,
-                    color: "#171717",
-                    lineHeight: 1.15,
-                    letterSpacing: "-0.01em",
-                  }}
-                >
-                  Apply for Leave
-                </h1>
-                <p style={{ fontSize: "13.5px", color: "#737373", marginTop: "4px" }}>
-                  Submit your leave request for approval.
-                </p>
-              </div>
-              <Link
-                href="/attendance/leave"
-                aria-label="Close"
-                style={{
-                  width: "36px",
-                  height: "36px",
-                  display: "grid",
-                  placeItems: "center",
-                  borderRadius: "10px",
-                  color: "#A3A3A3",
-                }}
-                className="hover:bg-neutral-100 hover:text-neutral-700 transition-colors"
-              >
-                <X size={18} aria-hidden="true" />
-              </Link>
-            </div>
-          </div>
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-6 pb-12">
+        {/* Heading */}
+        <header className="mb-6">
+          <h1 className="text-2xl sm:text-3xl font-semibold text-slate-900 tracking-tight">Apply for Leave</h1>
+          <p className="mt-1 text-sm text-slate-500">Step {step} of 4</p>
+        </header>
 
-          {/* Body */}
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "24px",
-              padding: "28px 32px",
-            }}
-          >
-            {/* Leave type */}
-            <FieldBlock
-              icon={<Tag size={13} strokeWidth={2.5} />}
-              label="Leave Type"
-              required
-            >
-              <select
-                required
-                value={leaveTypeId}
-                onChange={(e) => setLeaveTypeId(e.target.value)}
-                style={{ ...inputStyle, appearance: "none", paddingRight: "40px" }}
-                onFocus={handleFocus}
-                onBlur={handleBlur}
-              >
-                <option value="" disabled>
-                  Select leave type
-                </option>
-                {leaveTypes.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-            </FieldBlock>
+        <div>
+        {/* Progress bar */}
+        <ProgressBar currentStep={step} />
 
-            {/* Date range */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                gap: "20px",
-                alignItems: "start",
+        {/* Step content */}
+        <div className="mt-6 bg-white border border-slate-200 rounded-2xl shadow-sm p-5 sm:p-6">
+          {step === 1 && (
+            <Step1
+              leaveTypes={leaveTypes}
+              typeId={typeId}
+              onSelect={setTypeId}
+            />
+          )}
+          {step === 2 && (
+            <Step2
+              startISO={startISO}
+              endISO={endISO}
+              onChange={(s, e) => {
+                setStartISO(s);
+                setEndISO(e);
               }}
             >
               <FieldBlock
@@ -350,6 +237,8 @@ export default function LeaveFormView({
                 />
               </FieldBlock>
             </div>
+          )}
+        </div>
 
             {/* Half day toggle — only for a single-day request */}
             {isSingleDay && (
@@ -433,403 +322,436 @@ export default function LeaveFormView({
 
             <Divider />
 
-            {/* Reason */}
-            <FieldBlock
-              icon={<FileText size={13} strokeWidth={2.5} />}
-              label="Reason"
-              hint="Help your approver understand the request"
-            >
-              <textarea
-                rows={4}
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                placeholder="Brief reason for taking leave…"
-                style={{
-                  ...inputStyle,
-                  height: "auto",
-                  padding: "12px 16px",
-                  resize: "none",
-                  lineHeight: 1.55,
-                }}
-                onFocus={handleFocus}
-                onBlur={handleBlur}
-              />
-            </FieldBlock>
-
-            <Divider />
-
-            {/* Supporting document */}
-            <FieldBlock
-              icon={<Paperclip size={13} strokeWidth={2.5} />}
-              label="Supporting Document"
-              hint="Optional — e.g. MC for medical leave"
-            >
-              {!file ? (
-                <div
-                  onClick={() => fileRef.current?.click()}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    setDragOver(true);
-                  }}
-                  onDragLeave={() => setDragOver(false)}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setDragOver(false);
-                    handleFile(e.dataTransfer.files);
-                  }}
-                  style={{
-                    cursor: "pointer",
-                    borderRadius: "14px",
-                    border: `2px dashed ${dragOver ? ACCENT : "#E5E7EB"}`,
-                    padding: "32px",
-                    textAlign: "center",
-                    transition: "all 0.2s",
-                    backgroundColor: dragOver ? ACCENT_SOFT : "#FAFAFA",
-                  }}
-                >
-                  <input
-                    ref={fileRef}
-                    type="file"
-                    accept=".pdf,.jpg,.jpeg,.png"
-                    style={{ display: "none" }}
-                    onChange={(e) => handleFile(e.target.files)}
-                  />
-                  <div
-                    style={{
-                      margin: "0 auto 12px",
-                      width: "44px",
-                      height: "44px",
-                      borderRadius: "9999px",
-                      display: "grid",
-                      placeItems: "center",
-                      backgroundColor: dragOver ? ACCENT_RING : "#F5F5F5",
-                    }}
-                  >
-                    <Upload
-                      size={18}
-                      strokeWidth={1.75}
-                      style={{ color: dragOver ? ACCENT : "#737373" }}
-                    />
-                  </div>
-                  <p
-                    style={{
-                      fontSize: "13.5px",
-                      color: "#404040",
-                      fontWeight: 500,
-                      marginBottom: "4px",
-                    }}
-                  >
-                    Click to upload{" "}
-                    <span style={{ color: ACCENT }}>MC or Document</span>
-                  </p>
-                  <p style={{ fontSize: "11.5px", color: "#A3A3A3" }}>
-                    PDF, JPG or PNG · Max 5MB
-                  </p>
-                </div>
-              ) : (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "12px",
-                    padding: "14px 16px",
-                    borderRadius: "12px",
-                    border: `1px solid ${ACCENT_BORDER}`,
-                    backgroundColor: ACCENT_SOFT,
-                  }}
-                >
-                  <div
-                    style={{
-                      width: "36px",
-                      height: "36px",
-                      borderRadius: "8px",
-                      display: "grid",
-                      placeItems: "center",
-                      backgroundColor: "#fff",
-                      color: ACCENT,
-                      flexShrink: 0,
-                    }}
-                  >
-                    <Paperclip size={16} strokeWidth={2} />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p
-                      style={{
-                        fontSize: "13.5px",
-                        fontWeight: 500,
-                        color: "#262626",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {file.name}
-                    </p>
-                    <p style={{ fontSize: "11.5px", color: "#737373" }}>
-                      {(file.size / 1024).toFixed(1)} KB
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => fileRef.current?.click()}
-                    style={{
-                      height: "32px",
-                      padding: "0 12px",
-                      borderRadius: "8px",
-                      border: `1px solid ${ACCENT_BORDER}`,
-                      backgroundColor: "#fff",
-                      fontSize: "12px",
-                      fontWeight: 500,
-                      color: ACCENT_TEXT,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Replace
-                  </button>
-                  <button
-                    type="button"
-                    onClick={removeFile}
-                    style={{
-                      width: "32px",
-                      height: "32px",
-                      display: "grid",
-                      placeItems: "center",
-                      borderRadius: "8px",
-                      color: "#A3A3A3",
-                      border: "1px solid transparent",
-                      background: "transparent",
-                      cursor: "pointer",
-                    }}
-                    aria-label="Remove file"
-                  >
-                    <X size={14} />
-                  </button>
-                  <input
-                    ref={fileRef}
-                    type="file"
-                    accept=".pdf,.jpg,.jpeg,.png"
-                    style={{ display: "none" }}
-                    onChange={(e) => handleFile(e.target.files)}
-                  />
-                </div>
-              )}
-            </FieldBlock>
-
-            {/* Notice */}
-            <div
-              style={{
-                display: "flex",
-                gap: "12px",
-                alignItems: "flex-start",
-                borderRadius: "12px",
-                padding: "14px 16px",
-                backgroundColor: ACCENT_SOFT,
-                border: `1px solid ${ACCENT_BORDER}`,
-              }}
-            >
-              <Info
-                size={17}
-                strokeWidth={2}
-                style={{ color: ACCENT, marginTop: "2px", flexShrink: 0 }}
-                aria-hidden="true"
-              />
-              <div>
-                <p
-                  style={{
-                    fontSize: "13.5px",
-                    fontWeight: 600,
-                    marginBottom: "2px",
-                    color: ACCENT_TEXT,
-                  }}
-                >
-                  Leave Submission
-                </p>
-                <p style={{ fontSize: "12px", lineHeight: 1.55, color: ACCENT_TEXT }}>
-                  Your request will be sent for approval. Total days are counted
-                  inclusive of both start and end dates.
-                </p>
-              </div>
-            </div>
-
-            {errorMsg && (
-              <div
-                role="alert"
-                style={{
-                  display: "flex",
-                  gap: "12px",
-                  alignItems: "flex-start",
-                  borderRadius: "12px",
-                  backgroundColor: "#FEF2F2",
-                  border: "1px solid #FECACA",
-                  padding: "14px 16px",
-                }}
-              >
-                <div
-                  style={{
-                    width: "18px",
-                    height: "18px",
-                    borderRadius: "9999px",
-                    backgroundColor: "#DC2626",
-                    color: "#fff",
-                    display: "grid",
-                    placeItems: "center",
-                    fontSize: "11px",
-                    fontWeight: 700,
-                    marginTop: "2px",
-                    flexShrink: 0,
-                  }}
-                >
-                  !
-                </div>
-                <div>
-                  <p style={{ fontSize: "13.5px", fontWeight: 600, color: "#7F1D1D" }}>
-                    Could not submit leave request
-                  </p>
-                  <p style={{ fontSize: "12px", color: "#991B1B", lineHeight: 1.55 }}>
-                    {errorMsg}
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Footer actions */}
-          <div
-            style={{
-              padding: "18px 32px",
-              borderTop: "1px solid #F3F4F6",
-              backgroundColor: "#FAFAFA",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "flex-end",
-              gap: "12px",
-            }}
-          >
-            <Link
-              href="/attendance/leave"
-              style={{
-                height: "44px",
-                display: "inline-flex",
-                alignItems: "center",
-                padding: "0 20px",
-                borderRadius: "10px",
-                border: "1px solid #E5E7EB",
-                backgroundColor: "#fff",
-                fontSize: "13.5px",
-                fontWeight: 500,
-                color: "#404040",
-              }}
-              className="hover:bg-neutral-50 transition-colors"
-            >
-              Cancel
-            </Link>
+          {step < 4 ? (
             <button
-              type="submit"
-              disabled={!canSubmit || isPending}
-              style={{
-                height: "44px",
-                padding: "0 24px",
-                borderRadius: "10px",
-                backgroundColor: canSubmit && !isPending ? ACCENT : "#D4D4D4",
-                color: "#fff",
-                fontSize: "13.5px",
-                fontWeight: 600,
-                cursor: canSubmit && !isPending ? "pointer" : "not-allowed",
-                boxShadow:
-                  canSubmit && !isPending ? `0 4px 12px ${ACCENT_RING}` : "none",
-                transition: "background-color 0.15s, box-shadow 0.15s",
-              }}
-              onMouseEnter={(e) => {
-                if (!canSubmit || isPending) return;
-                e.currentTarget.style.backgroundColor = ACCENT_DARK;
-              }}
-              onMouseLeave={(e) => {
-                if (!canSubmit || isPending) return;
-                e.currentTarget.style.backgroundColor = ACCENT;
-              }}
+              type="button"
+              onClick={() => setStep((s) => (s + 1) as Step)}
+              disabled={(step === 1 && !canContinue1) || (step === 2 && !canContinue2)}
+              className="inline-flex items-center justify-center gap-1.5 h-11 px-5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors disabled:bg-slate-300 disabled:cursor-not-allowed"
             >
-              {isPending ? "Submitting…" : "Submit Request"}
+              Continue
+              <ChevronRight className="w-4 h-4" aria-hidden="true" />
             </button>
-          </div>
-        </form>
+          ) : (
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={pending}
+              className="inline-flex items-center justify-center gap-1.5 h-11 px-5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors disabled:bg-slate-400 disabled:cursor-not-allowed"
+            >
+              {pending ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+                  Submitting…
+                </>
+              ) : (
+                "Submit application"
+              )}
+            </button>
+          )}
+        </div>
+        </div>
       </div>
-
-      <style>{`
-        input[type="date"]::-webkit-calendar-picker-indicator { opacity: 0.5; cursor: pointer; }
-      `}</style>
     </div>
   );
 }
 
-function FieldBlock({
-  icon,
-  label,
-  required,
-  hint,
-  children,
+// ─── Progress bar ────────────────────────────────────────────────────────────
+
+function ProgressBar({ currentStep }: { currentStep: Step }) {
+  const steps: { num: Step; label: string }[] = [
+    { num: 1, label: "Type" },
+    { num: 2, label: "Dates" },
+    { num: 3, label: "Reason" },
+    { num: 4, label: "Review" },
+  ];
+  return (
+    <ol className="flex items-center gap-2 sm:gap-3">
+      {steps.map((s, i) => {
+        const isCompleted = currentStep > s.num;
+        const isCurrent = currentStep === s.num;
+        return (
+          <li key={s.num} className="flex items-center gap-2 sm:gap-3 flex-1">
+            <div className="flex items-center gap-2 min-w-0">
+              <span
+                aria-current={isCurrent ? "step" : undefined}
+                className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-colors ${
+                  isCompleted
+                    ? "bg-blue-600 border-blue-600 text-white"
+                    : isCurrent
+                      ? "border-blue-600 bg-white text-blue-600"
+                      : "border-slate-300 bg-white text-slate-400"
+                }`}
+              >
+                {isCompleted ? <Check className="w-4 h-4" aria-hidden="true" /> : s.num}
+              </span>
+              <span
+                className={`text-xs sm:text-sm font-medium truncate ${
+                  isCompleted || isCurrent ? "text-slate-900" : "text-slate-400"
+                }`}
+              >
+                {s.label}
+              </span>
+            </div>
+            {i < steps.length - 1 && (
+              <div className={`flex-1 h-0.5 rounded ${currentStep > s.num ? "bg-blue-600" : "bg-slate-200"}`} />
+            )}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+// ─── Step 1 — Leave type ─────────────────────────────────────────────────────
+
+function Step1({
+  leaveTypes,
+  typeId,
+  onSelect,
 }: {
-  icon?: React.ReactNode;
-  label: string;
-  required?: boolean;
-  hint?: React.ReactNode;
-  children: React.ReactNode;
+  leaveTypes: LeaveTypeOption[];
+  typeId: number | null;
+  onSelect: (id: number) => void;
 }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-      <label
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: "6px",
-          fontSize: "11.5px",
-          fontWeight: 600,
-          letterSpacing: "0.08em",
-          textTransform: "uppercase",
-          color: "#737373",
-        }}
-      >
-        {icon}
-        {label}
-        {required && (
-          <span style={{ marginLeft: "2px", fontWeight: 700, color: ACCENT_RED }}>*</span>
+    <section>
+      <h2 className="text-base font-semibold text-slate-900">Choose a leave type</h2>
+      <p className="text-sm text-slate-500 mb-5">Select the type of leave you&apos;re applying for.</p>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {leaveTypes.length === 0 ? (
+          <div className="col-span-full text-center text-sm text-slate-400 py-10">
+            No leave types configured.
+          </div>
+        ) : (
+          leaveTypes.map((t) => {
+            const Icon = pickIcon(t.code, t.name);
+            const accent = pickAccent(t.code, t.name);
+            const isSelected = typeId === t.id;
+            const balance =
+              t.balance == null
+                ? "Unlimited"
+                : `${t.balance} day${t.balance === 1 ? "" : "s"} left`;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => onSelect(t.id)}
+                aria-pressed={isSelected}
+                className={`text-left bg-white border-2 rounded-xl p-4 transition-all hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:${accent.ring} ${
+                  isSelected
+                    ? `${accent.border} shadow-sm`
+                    : "border-slate-200 hover:border-slate-300"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-xl ${accent.tile} flex items-center justify-center shrink-0`}>
+                    <Icon className={`w-5 h-5 ${accent.icon}`} aria-hidden="true" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-semibold text-slate-900 truncate">{t.name}</div>
+                    <div className="text-xs text-slate-500 mt-0.5">{balance}</div>
+                  </div>
+                </div>
+              </button>
+            );
+          })
         )}
-      </label>
-      {children}
-      {hint && (
-        <p
-          style={{
-            fontSize: "11.5px",
-            color: "#A3A3A3",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "4px",
-          }}
+      </div>
+    </section>
+  );
+}
+
+// ─── Step 2 — Date range with calendar ───────────────────────────────────────
+
+function Step2({
+  startISO,
+  endISO,
+  onChange,
+}: {
+  startISO: string | null;
+  endISO: string | null;
+  onChange: (start: string | null, end: string | null) => void;
+}) {
+  const [viewYear, setViewYear] = useState(() => new Date().getFullYear());
+  const [viewMonth, setViewMonth] = useState(() => new Date().getMonth());
+
+  function shiftMonth(delta: number) {
+    let m = viewMonth + delta;
+    let y = viewYear;
+    if (m < 0) { m = 11; y--; }
+    if (m > 11) { m = 0; y++; }
+    setViewMonth(m);
+    setViewYear(y);
+  }
+
+  function onDayClick(d: Date) {
+    if (isWeekend(d)) return;
+    const iso = isoDate(d);
+    if (!startISO || (startISO && endISO)) {
+      // start a new range
+      onChange(iso, null);
+    } else {
+      // extending from start
+      if (iso < startISO) {
+        onChange(iso, null);
+      } else if (iso === startISO) {
+        onChange(null, null);
+      } else {
+        onChange(startISO, iso);
+      }
+    }
+  }
+
+  const summary = startISO
+    ? `${fmtFriendlyRange(startISO, endISO)} · ${workingDaysBetween(startISO, endISO ?? startISO)} working day${
+        workingDaysBetween(startISO, endISO ?? startISO) === 1 ? "" : "s"
+      }`
+    : "Pick a start date to begin.";
+
+  return (
+    <section>
+      <h2 className="text-base font-semibold text-slate-900">Pick your dates</h2>
+      <p className="text-sm text-slate-500 mb-4">
+        Tap a start date, then tap an end date. Weekends are not selectable.
+      </p>
+
+      <div className="max-w-sm mx-auto">
+        <Calendar
+          viewYear={viewYear}
+          viewMonth={viewMonth}
+          startISO={startISO}
+          endISO={endISO}
+          onShiftMonth={shiftMonth}
+          onDayClick={onDayClick}
+        />
+      </div>
+
+      <div className="mt-4 max-w-sm mx-auto bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm">
+        <span className={startISO ? "text-slate-900 font-medium" : "text-slate-400"}>
+          {summary}
+        </span>
+      </div>
+    </section>
+  );
+}
+
+function Calendar({
+  viewYear,
+  viewMonth,
+  startISO,
+  endISO,
+  onShiftMonth,
+  onDayClick,
+}: {
+  viewYear: number;
+  viewMonth: number;
+  startISO: string | null;
+  endISO: string | null;
+  onShiftMonth: (delta: number) => void;
+  onDayClick: (d: Date) => void;
+}) {
+  const monthLabel = new Date(viewYear, viewMonth, 1).toLocaleString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+  const firstDay = new Date(viewYear, viewMonth, 1);
+  const startWeekday = firstDay.getDay(); // 0=Sun
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+
+  const cells: (Date | null)[] = [];
+  for (let i = 0; i < startWeekday; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(viewYear, viewMonth, d));
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  const today = isoDate(new Date());
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-2.5">
+      <div className="flex items-center justify-between mb-2">
+        <button
+          type="button"
+          onClick={() => onShiftMonth(-1)}
+          aria-label="Previous month"
+          className="p-1 rounded-md text-slate-600 hover:bg-slate-100"
         >
-          {hint}
-        </p>
-      )}
+          <ChevronLeft className="w-4 h-4" aria-hidden="true" />
+        </button>
+        <div className="text-xs font-semibold text-slate-900 flex items-center gap-1.5">
+          <CalendarIcon className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
+          {monthLabel}
+        </div>
+        <button
+          type="button"
+          onClick={() => onShiftMonth(1)}
+          aria-label="Next month"
+          className="p-1 rounded-md text-slate-600 hover:bg-slate-100"
+        >
+          <ChevronRight className="w-4 h-4" aria-hidden="true" />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-7 gap-0.5 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-0.5">
+        {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
+          <div key={i} className="py-0.5">{d}</div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-7 gap-0.5">
+        {cells.map((d, i) => {
+          if (d === null) return <div key={i} />;
+          const iso = isoDate(d);
+          const weekend = isWeekend(d);
+          const isStart = iso === startISO;
+          const isEnd = iso === endISO;
+          const inRange =
+            startISO && endISO && iso > startISO && iso < endISO ? true : false;
+          const isToday = iso === today;
+
+          let cls =
+            "aspect-square flex items-center justify-center text-xs rounded-md transition-colors select-none";
+          if (weekend) {
+            cls += " text-slate-300 cursor-not-allowed bg-slate-50";
+          } else if (isStart || isEnd) {
+            cls += " bg-blue-600 text-white font-semibold";
+          } else if (inRange) {
+            cls += " bg-blue-100 text-blue-700";
+          } else {
+            cls += " text-slate-700 hover:bg-slate-100 cursor-pointer";
+            if (isToday) cls += " ring-1 ring-blue-300";
+          }
+
+          return (
+            <button
+              key={i}
+              type="button"
+              disabled={weekend}
+              onClick={() => onDayClick(d)}
+              className={cls}
+              aria-label={iso}
+            >
+              {d.getDate()}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
-function Divider() {
-  return <div style={{ height: "1px", backgroundColor: "#F3F4F6" }} />;
+// ─── Step 3 — Reason & coverage ──────────────────────────────────────────────
+
+function Step3({
+  reason,
+  setReason,
+  notifyManager,
+  setNotifyManager,
+  notifyTeam,
+  setNotifyTeam,
+}: {
+  reason: string;
+  setReason: (v: string) => void;
+  notifyManager: boolean;
+  setNotifyManager: (v: boolean) => void;
+  notifyTeam: boolean;
+  setNotifyTeam: (v: boolean) => void;
+}) {
+  return (
+    <section className="space-y-5">
+      <div>
+        <h2 className="text-base font-semibold text-slate-900">Reason</h2>
+        <p className="text-sm text-slate-500">Optional — a short note for your manager.</p>
+      </div>
+
+      <div>
+        <label htmlFor="reason" className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+          Reason
+        </label>
+        <textarea
+          id="reason"
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          rows={4}
+          placeholder="A short note for your manager…"
+          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        />
+      </div>
+
+      <div className="space-y-2 pt-1">
+        <ToggleRow
+          label="Notify my manager"
+          description="Send your manager a heads-up when this is submitted."
+          checked={notifyManager}
+          onChange={setNotifyManager}
+        />
+        <ToggleRow
+          label="Notify my team"
+          description="Let your team know about the date range."
+          checked={notifyTeam}
+          onChange={setNotifyTeam}
+        />
+      </div>
+    </section>
+  );
 }
 
-function SuccessScreen({
-  typeName,
-  days,
-  startDate,
-  endDate,
-  onAnother,
+function ToggleRow({
+  label,
+  description,
+  checked,
+  onChange,
 }: {
-  typeName: string;
-  days: number;
-  startDate: string;
-  endDate: string;
-  onAnother: () => void;
+  label: string;
+  description: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
 }) {
-  const fmt = (d: string) => new Date(d).toLocaleDateString("en-GB");
+  return (
+    <div className="flex items-start justify-between gap-4 px-3 py-3 rounded-xl border border-slate-200">
+      <div className="min-w-0">
+        <div className="text-sm font-medium text-slate-900">{label}</div>
+        <div className="text-xs text-slate-500">{description}</div>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 ${
+          checked ? "bg-blue-600" : "bg-slate-300"
+        }`}
+      >
+        <span
+          aria-hidden="true"
+          className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+            checked ? "translate-x-5" : "translate-x-0.5"
+          }`}
+        />
+      </button>
+    </div>
+  );
+}
+
+// ─── Step 4 — Review ─────────────────────────────────────────────────────────
+
+function Step4({
+  type,
+  startISO,
+  endISO,
+  workingDays,
+  reason,
+  notifyManager,
+  notifyTeam,
+}: {
+  type: LeaveTypeOption | null;
+  startISO: string | null;
+  endISO: string | null;
+  workingDays: number;
+  reason: string;
+  notifyManager: boolean;
+  notifyTeam: boolean;
+}) {
   return (
     <div
       style={{

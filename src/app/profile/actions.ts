@@ -1,10 +1,9 @@
 "use server";
+import { auth } from "@/auth";
 
 import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/nextauth";
 import { prisma } from "@/lib/prisma";
 import { titleCaseName } from "@/lib/text";
 
@@ -61,7 +60,7 @@ export async function changePassword(
   _: ChangePasswordResult | null,
   formData: FormData,
 ): Promise<ChangePasswordResult> {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user) return { ok: false, error: "You are not signed in." };
   const userId = parseInt((session.user as { id?: string }).id ?? "", 10);
   if (!Number.isFinite(userId)) return { ok: false, error: "Session is missing user id." };
@@ -93,7 +92,7 @@ export async function updateMyProfile(
   _: UpdateMyProfileResult | null,
   formData: FormData,
 ): Promise<UpdateMyProfileResult> {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user) return { ok: false, error: "You are not signed in." };
   const userId = parseInt((session.user as { id?: string }).id ?? "", 10);
   if (!Number.isFinite(userId)) return { ok: false, error: "Session is missing user id." };
@@ -243,7 +242,7 @@ export async function updateEmail(
   _: UpdateEmailResult | null,
   formData: FormData,
 ): Promise<UpdateEmailResult> {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user) return { ok: false, error: "You are not signed in." };
   const userId = parseInt((session.user as { id?: string }).id ?? "", 10);
   if (!Number.isFinite(userId)) return { ok: false, error: "Session is missing user id." };
@@ -280,7 +279,7 @@ export async function updateOrgUnit(
   _: UpdateOrgUnitResult | null,
   formData: FormData,
 ): Promise<UpdateOrgUnitResult> {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user) return { ok: false, error: "You are not signed in." };
   const userId = parseInt((session.user as { id?: string }).id ?? "", 10);
   if (!Number.isFinite(userId)) return { ok: false, error: "Session is missing user id." };

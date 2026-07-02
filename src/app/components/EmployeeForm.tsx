@@ -7,6 +7,16 @@ import type { ReactNode } from "react";
 import { Home, ChevronRight, User, Briefcase, Landmark, HeartPulse, CircleAlert } from "lucide-react";
 import type { CreateEmployeeResult } from "@/app/dashboard-employee-management/actions";
 import type { EmployeeDetailFull } from "@/lib/employeeQueries";
+import type { InductionEmployeeOption } from "@/app/induction/queries";
+import { CredentialScreen } from "@/app/induction/components/CredentialScreen";
+
+const WORKFLOW_TEMPLATE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "Standard", label: "Regular Intern · HQ" },
+  { value: "ProtegeInternBranch", label: "Protege Intern · Branch" },
+  { value: "CoachPartTimer", label: "Coach (Part-timer) · Branch + 3-week" },
+  { value: "CoachFullTimer", label: "Coach (Full-timer) · Branch + 3-week" },
+  { value: "FullTimer", label: "Full-timer · HQ or Branch" },
+];
 
 const ROLE_OPTIONS = ["FT CEO", "FT HOD", "FT EXEC", "BM", "FT COACH", "PT COACH", "INTERN"];
 
@@ -99,6 +109,7 @@ export default function EmployeeForm({
   employee,
   action,
   isSelfEdit = false,
+  buddyOptions = [],
 }: {
   branches: BranchOpt[];
   departments: DepartmentOpt[];
@@ -106,6 +117,9 @@ export default function EmployeeForm({
   employee?: EmployeeDetailFull;
   action: FormAction;
   isSelfEdit?: boolean;
+  /** Active-user list for the Induction Buddy dropdown. Only used when
+   *  the "Assign to onboarding" toggle is on. Empty on edit pages. */
+  buddyOptions?: InductionEmployeeOption[];
 }) {
   const router = useRouter();
   const [state, formAction, pending] = useActionState<CreateEmployeeResult | null, FormData>(action, null);
@@ -114,6 +128,22 @@ export default function EmployeeForm({
   const [startDate, setStartDate] = useState<string>(employee?.startDate ?? "");
   const [endDate, setEndDate] = useState<string>(employee?.endDate ?? "");
   const [activeTab, setActiveTab] = useState<TabKey>("profile");
+  // Onboarding toggle — only relevant on the Add Employee (create) flow.
+  // When on, the form posts workflow_template / onboarding_start_date /
+  // buddy_user_id and the server creates an induction_profile + steps in
+  // the same transaction, then returns credentials for the overlay.
+  const [assignOnboarding, setAssignOnboarding] = useState(false);
+  const [onbWorkflowTemplate, setOnbWorkflowTemplate] = useState("Standard");
+  const [onbStartDate, setOnbStartDate] = useState(() =>
+    new Date().toISOString().slice(0, 10),
+  );
+  // When HR changes the start date, the email-send date follows along
+  // unless they've manually changed it (tracked by sendEmailDirty).
+  const [onbSendEmailOn, setOnbSendEmailOn] = useState(() =>
+    new Date().toISOString().slice(0, 10),
+  );
+  const [sendEmailDirty, setSendEmailDirty] = useState(false);
+  const [onbBuddyId, setOnbBuddyId] = useState("");
   const [branchId, setBranchId] = useState<string>(
     employee?.branchId ? String(employee.branchId) : "",
   );
@@ -160,8 +190,49 @@ export default function EmployeeForm({
     : isEdit
       ? `Update ${employee?.fullName ?? "this employee"}'s details across the four sections below.`
       : "Enter the new employee's details across the four sections below.";
-  const saveButtonText = isSelfEdit ? "Save Profile" : isEdit ? "Save Changes" : "Save Employee";
+  const saveButtonText = isSelfEdit
+    ? "Save Profile"
+    : isEdit
+      ? "Save Changes"
+      : assignOnboarding
+        ? "Save & Generate Link"
+        : "Save Employee";
   const savingText = "Saving...";
+
+  // Credential overlay: shown after Save & Generate Link succeeds. Done
+  // navigates back to the employee list and refreshes so the new row
+  // appears in the onboarding panel without a manual refresh.
+  if (state?.credentials) {
+    return (
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="credential-overlay-title"
+        className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        style={{ background: "rgba(0, 0, 0, 0.45)" }}
+      >
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
+          <CredentialScreen
+            data={{
+              ...state.credentials,
+              // The candidate logs in via the standard /login page (not
+              // the token URL). Rebuild from the actual browser origin
+              // so HR sees a link they can confirm works from their
+              // session, regardless of NEXTAUTH_URL on the server.
+              loginLink:
+                typeof window !== "undefined"
+                  ? `${window.location.origin}/login`
+                  : state.credentials.loginLink,
+            }}
+            onDone={() => {
+              router.push("/dashboard-employee-management");
+              router.refresh();
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-full bg-slate-50">
@@ -466,6 +537,101 @@ export default function EmployeeForm({
                 <span className="text-slate-700">Currently on probation</span>
               </label>
             </Field>
+
+            {!isEdit && !isSelfEdit && (
+              <div className="col-span-2 space-y-4">
+                <hr className="border-slate-200" />
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-900">Assign to onboarding</p>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      Generate login credentials and assign an induction workflow.
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                    <input
+                      type="checkbox"
+                      name="assign_to_onboarding"
+                      checked={assignOnboarding}
+                      onChange={(e) => setAssignOnboarding(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-200 rounded-full peer peer-checked:bg-blue-600 transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-transform peer-checked:after:translate-x-5" />
+                  </label>
+                </div>
+
+                {assignOnboarding && (
+                  <div className="rounded-lg border border-blue-100 bg-blue-50/40 p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Field label="Workflow Template" required>
+                      <div className="relative">
+                        <select
+                          name="workflow_template"
+                          value={onbWorkflowTemplate}
+                          onChange={(e) => setOnbWorkflowTemplate(e.target.value)}
+                          required
+                          className={`${inputCls} pr-8 appearance-none cursor-pointer`}
+                        >
+                          {WORKFLOW_TEMPLATE_OPTIONS.map((t) => (
+                            <option key={t.value} value={t.value}>{t.label}</option>
+                          ))}
+                        </select>
+                        <ChevronRight className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 rotate-90" aria-hidden="true" />
+                      </div>
+                    </Field>
+                    <Field label="Onboarding Start Date" required>
+                      <input
+                        name="onboarding_start_date"
+                        type="date"
+                        value={onbStartDate}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setOnbStartDate(v);
+                          // Auto-sync the send date if HR hasn't manually
+                          // tweaked it — matches the spec default of
+                          // "same as the onboarding start date".
+                          if (!sendEmailDirty) setOnbSendEmailOn(v);
+                        }}
+                        required
+                        className={inputCls}
+                      />
+                    </Field>
+                    <Field
+                      label="Send onboarding email on"
+                      hint="Defaults to the onboarding start date. Pick an earlier or later date to schedule the welcome email."
+                    >
+                      <input
+                        name="send_email_on"
+                        type="date"
+                        value={onbSendEmailOn}
+                        onChange={(e) => {
+                          setOnbSendEmailOn(e.target.value);
+                          setSendEmailDirty(true);
+                        }}
+                        className={inputCls}
+                      />
+                    </Field>
+                    <Field label="Induction Buddy" span={2}>
+                      <div className="relative">
+                        <select
+                          name="buddy_user_id"
+                          value={onbBuddyId}
+                          onChange={(e) => setOnbBuddyId(e.target.value)}
+                          className={`${inputCls} pr-8 appearance-none cursor-pointer`}
+                        >
+                          <option value="">No buddy assigned</option>
+                          {buddyOptions.map((b) => (
+                            <option key={b.userId} value={b.userId}>
+                              {b.fullName} ({b.email})
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronRight className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 rotate-90" aria-hidden="true" />
+                      </div>
+                    </Field>
+                  </div>
+                )}
+              </div>
+            )}
           </Section>
           </div>
 

@@ -30,6 +30,8 @@ export default function HomePage() {
   const userRole = (session?.user as { role?: string } | undefined)?.role || "USER";
   const userPosition = (session?.user as { position?: string } | undefined)?.position ?? "";
   const userName = session?.user?.name ?? null;
+  const branchName =
+    (session?.user as { branchName?: string | null } | undefined)?.branchName ?? null;
 
   // role_type "staff" corresponds to role_id = 4 in the DB.
   const isStaff = userRole.toLowerCase() === "staff";

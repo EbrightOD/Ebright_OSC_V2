@@ -1,6 +1,5 @@
+﻿import { auth } from "@/auth";
 import { notFound, redirect } from "next/navigation";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/nextauth";
 import { prisma } from "@/lib/prisma";
 import AppShell from "@/app/components/AppShell";
 import ClaimFormView from "@/app/components/ClaimFormView";
@@ -29,7 +28,7 @@ export default async function NewClaimTypePage({
 }: {
   params: Promise<{ type: string }>;
 }) {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.email) redirect("/login");
 
   const { type } = await params;

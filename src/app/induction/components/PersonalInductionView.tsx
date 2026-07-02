@@ -4,12 +4,17 @@ import { TrainingChecklist } from "./TrainingChecklist";
 import OnboardingWorkflow, {
   type SubstepView as WorkflowSubstepView,
 } from "./OnboardingWorkflow";
+import { CandidateWorkflowSection } from "./CandidateWorkflowSection";
 import type { InductionView, SubstepTemplateView } from "@/app/induction/queries";
+import type { AssignmentForCandidate } from "@/lib/workflow/queries";
 
 interface PersonalInductionViewProps {
   profile: InductionView;
   canMarkComplete: boolean;
   substepTemplates: SubstepTemplateView[];
+  /** Optional — assigned department workflow (from Workflow Center).
+   *  Surfaced as its own section below the induction journey. */
+  workflowAssignment?: AssignmentForCandidate | null;
 }
 
 // Inline copy of the server-only groupSubstepsByParent — filters by template
@@ -49,6 +54,7 @@ export default function PersonalInductionView({
   profile,
   canMarkComplete,
   substepTemplates,
+  workflowAssignment = null,
 }: PersonalInductionViewProps) {
   const total = profile.steps.length;
   const completed = profile.steps.filter((s) => s.status === "Completed").length;
@@ -178,6 +184,12 @@ export default function PersonalInductionView({
             />
           </section>
         )}
+
+        {/* Department Workflow (Workflow Center PR1) — only for onboarding.
+            Renders the candidate's assigned department workflow with
+            checkboxes on their own Candidate-actor tasks. Placeholder
+            text when no workflow has been assigned to them yet. */}
+        {!isOffboarding && <CandidateWorkflowSection assignment={workflowAssignment} />}
 
         {isComplete && (
           <footer className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 text-center">

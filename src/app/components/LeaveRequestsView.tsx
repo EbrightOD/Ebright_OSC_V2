@@ -26,6 +26,7 @@ export interface LeaveRow {
   rejectionReason: string | null;
   status: string;
   appliedAt: string;
+  employeeName?: string;
 }
 
 export interface LeaveStatusCounts {
@@ -158,7 +159,8 @@ export default function LeaveRequestsView({
       return (
         r.displayId.toLowerCase().includes(q) ||
         r.leaveTypeName.toLowerCase().includes(q) ||
-        (r.reason?.toLowerCase().includes(q) ?? false)
+        (r.reason?.toLowerCase().includes(q) ?? false) ||
+        (r.employeeName?.toLowerCase().includes(q) ?? false)
       );
     });
   }, [rows, query, statusFilter, typeFilter, monthFilter]);
@@ -189,23 +191,75 @@ export default function LeaveRequestsView({
           <span className="text-slate-900 font-medium">Leave</span>
         </nav>
 
-        {/* Page header */}
-        <header className="flex items-start justify-between gap-4">
-          <div>
+        {/* Unified header: title + tabs/CTA in one row */}
+        <header className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
             <h1 className="text-3xl md:text-4xl font-semibold text-slate-900 tracking-tight">
-              Leave Requests
+              {tab === "team" && canApprove
+                ? "Leave Approvals"
+                : viewOnly ? "All Leave Requests" : "Leave Requests"}
             </h1>
             <p className="mt-1 text-sm text-slate-500">
-              Apply for leave and track the status of your requests.
+              {tab === "team" && canApprove
+                ? "Review and respond to leave requests from your team."
+                : viewOnly
+                  ? "Read-only view of every employee's leave requests."
+                  : "Apply for leave and track the status of your requests."}
             </p>
           </div>
-          <Link
-            href="/attendance/leave/new"
-            className="shrink-0 inline-flex items-center justify-center gap-2 bg-emerald-600 text-white rounded-xl px-5 py-2.5 text-sm font-semibold hover:bg-emerald-700 transition-colors shadow-sm shadow-emerald-600/20 whitespace-nowrap"
-          >
-            <Plus className="w-4 h-4" aria-hidden="true" />
-            Apply for Leave
-          </Link>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {canApprove && (
+              <div
+                role="tablist"
+                aria-label="Leave view"
+                className="inline-flex items-center gap-1 bg-white border border-slate-200 rounded-xl p-1"
+              >
+                <button
+                  role="tab"
+                  aria-selected={tab === "mine"}
+                  onClick={() => setTab("mine")}
+                  className={[
+                    "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-200 cursor-pointer",
+                    tab === "mine"
+                      ? "bg-emerald-600 text-white shadow-sm"
+                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-50",
+                  ].join(" ")}
+                >
+                  <User className="w-4 h-4" aria-hidden="true" />
+                  {viewOnly ? "All Requests" : "My Requests"}
+                </button>
+                <button
+                  role="tab"
+                  aria-selected={tab === "team"}
+                  onClick={() => setTab("team")}
+                  className={[
+                    "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-200 cursor-pointer",
+                    tab === "team"
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-50",
+                  ].join(" ")}
+                >
+                  <Users className="w-4 h-4" aria-hidden="true" />
+                  Team Approvals
+                </button>
+              </div>
+            )}
+            {tab === "team" && canApprove && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-100 text-blue-700 text-xs font-semibold border border-blue-200">
+                <Clock3 className="w-3.5 h-3.5" aria-hidden="true" />
+                {approvalRows.filter(r => r.status === "pending").length} pending
+              </span>
+            )}
+            {tab === "mine" && !viewOnly && (
+              <Link
+                href="/attendance/leave/new"
+                className="inline-flex items-center justify-center gap-2 bg-emerald-600 text-white rounded-xl px-5 py-2.5 text-sm font-semibold hover:bg-emerald-700 transition-colors shadow-sm shadow-emerald-600/20 whitespace-nowrap"
+              >
+                <Plus className="w-4 h-4" aria-hidden="true" />
+                Apply for Leave
+              </Link>
+            )}
+          </div>
         </header>
 
         {canApprove && (
@@ -354,7 +408,7 @@ export default function LeaveRequestsView({
             <option value="">All Types</option>
             {typeOptions.map((t) => (
               <option key={t.code} value={t.code}>
-                {t.name}
+                {t.code.toUpperCase()}
               </option>
             ))}
           </select>
@@ -382,7 +436,9 @@ export default function LeaveRequestsView({
           <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Umbrella className="w-4 h-4 text-slate-500" aria-hidden="true" />
-              <h2 className="text-sm font-semibold text-slate-900">My Leave Requests</h2>
+              <h2 className="text-sm font-semibold text-slate-900">
+                {viewOnly ? "All Leave Requests" : "My Leave Requests"}
+              </h2>
             </div>
             <p className="text-xs text-slate-500">
               {filtered.length} {filtered.length === 1 ? "record" : "records"}
@@ -394,6 +450,7 @@ export default function LeaveRequestsView({
               <thead className="bg-slate-50 text-[11px] font-semibold tracking-widest text-slate-500 uppercase">
                 <tr>
                   <th className="text-left px-6 py-3">ID</th>
+                  {viewOnly && <th className="text-left px-6 py-3">Employee</th>}
                   <th className="text-left px-6 py-3">Type</th>
                   <th className="text-left px-6 py-3">From</th>
                   <th className="text-left px-6 py-3">To</th>
@@ -407,7 +464,7 @@ export default function LeaveRequestsView({
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-6 py-20">
+                    <td colSpan={viewOnly ? 10 : 9} className="px-6 py-20">
                       <div className="flex flex-col items-center gap-3 text-center">
                         <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center">
                           <Inbox className="w-6 h-6 text-slate-400" aria-hidden="true" />
@@ -415,16 +472,20 @@ export default function LeaveRequestsView({
                         <div>
                           <p className="text-sm font-semibold text-slate-700">
                             {rows.length === 0
-                              ? "No leave requests yet"
+                              ? viewOnly
+                                ? "No leave requests in the system yet"
+                                : "No leave requests yet"
                               : "No requests match your filters"}
                           </p>
                           <p className="text-xs text-slate-500 mt-1">
                             {rows.length === 0
-                              ? "Apply for leave to see it listed here."
+                              ? viewOnly
+                                ? "Submitted requests will appear here."
+                                : "Apply for leave to see it listed here."
                               : "Try adjusting the search or filters."}
                           </p>
                         </div>
-                        {rows.length === 0 && (
+                        {rows.length === 0 && !viewOnly && (
                           <Link
                             href="/attendance/leave/new"
                             className="mt-2 inline-flex items-center gap-2 bg-emerald-600 text-white rounded-lg px-4 py-2 text-sm font-semibold hover:bg-emerald-700 transition-colors"
@@ -456,7 +517,14 @@ export default function LeaveRequestsView({
                         <td className="px-6 py-4 font-semibold text-emerald-700">
                           {r.displayId}
                         </td>
-                        <td className="px-6 py-4 text-slate-700">{r.leaveTypeName}</td>
+                        {viewOnly && (
+                          <td className="px-6 py-4 text-slate-700 truncate max-w-[200px]" title={r.employeeName ?? ""}>
+                            {r.employeeName ?? <span className="text-slate-400">—</span>}
+                          </td>
+                        )}
+                        <td className="px-6 py-4 text-slate-700 font-medium tabular-nums" title={r.leaveTypeName}>
+                          {r.leaveTypeCode.toUpperCase()}
+                        </td>
                         <td className="px-6 py-4 text-slate-600 tabular-nums">
                           {new Date(r.startDate).toLocaleDateString("en-GB")}
                         </td>

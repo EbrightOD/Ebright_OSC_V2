@@ -1,6 +1,5 @@
+import { auth } from "@/auth";
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/nextauth";
 import { prisma } from "@/lib/prisma";
 
 // Shape consumed by the planning grid: { id, name, branch (full name), role }.
@@ -29,7 +28,7 @@ const ASSIGNABLE_POSITIONS = new Set([
 ]);
 
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
   }

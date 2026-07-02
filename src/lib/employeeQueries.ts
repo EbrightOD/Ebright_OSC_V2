@@ -8,9 +8,9 @@ export type RoleOption = (typeof ROLE_OPTIONS)[number];
 export const STATUS_OPTIONS = ["active", "onboarding", "inactive", "archive"] as const;
 export type StatusOption = (typeof STATUS_OPTIONS)[number];
 
-export const STAFF_ROLE_ID = 4;
-// Roles that appear in the Employees list (role_id values from the `role` table).
-export const EMPLOYEE_LIST_ROLE_IDS = [2, 4];
+// role_id values from the `role` table: 1 superadmin, 2 ceo, 3 department,
+// 4 branch, 5 regional manager, 6 staff.
+export const STAFF_ROLE_ID = 6;
 
 export interface EmployeeRow {
   id: number;
@@ -18,6 +18,8 @@ export interface EmployeeRow {
   employeeId: string | null;
   fullName: string;
   nickName: string | null;
+  dob: string | null;
+  phone: string | null;
   role: string | null;
   branchCode: string | null;
   branchName: string | null;
@@ -25,6 +27,7 @@ export interface EmployeeRow {
   departmentName: string | null;
   status: string | null;
   startDate: string | null;
+  endDate: string | null;
   pendingOnboarding: boolean;
 }
 
@@ -85,9 +88,10 @@ export async function listEmployees(filters: ListFilters = {}): Promise<Employee
   if (filters.role) employmentWhere.position = filters.role;
   if (filters.status) employmentWhere.status = filters.status;
 
+  // Staff only (role_id 6) — the workforce, excluding admin/management
+  // accounts (superadmin, ceo, department, branch, regional manager).
   const whereUser: Record<string, unknown> = {
-    role_id: { in: EMPLOYEE_LIST_ROLE_IDS },
-    NOT: { status: "pending" },
+    role_id: STAFF_ROLE_ID,
   };
 
   if (Object.keys(employmentWhere).length > 0) {
@@ -126,6 +130,8 @@ export async function listEmployees(filters: ListFilters = {}): Promise<Employee
       employeeId: emp?.employee_id ?? null,
       fullName: titleCaseName(u.user_profile?.full_name) || u.email,
       nickName: u.user_profile?.nick_name ? titleCaseName(u.user_profile.nick_name) : null,
+      dob: u.user_profile?.dob ? u.user_profile.dob.toISOString().slice(0, 10) : null,
+      phone: u.user_profile?.phone ?? null,
       role: emp?.position ?? null,
       branchCode: emp?.branch?.branch_code ?? null,
       branchName: emp?.branch?.branch_name ?? null,
@@ -133,6 +139,7 @@ export async function listEmployees(filters: ListFilters = {}): Promise<Employee
       departmentName: emp?.department?.department_name ?? null,
       status: emp?.status ?? u.status ?? null,
       startDate: emp?.start_date ? emp.start_date.toISOString().slice(0, 10) : null,
+      endDate: emp?.end_date ? emp.end_date.toISOString().slice(0, 10) : null,
       pendingOnboarding: !u.user_profile,
     };
   });

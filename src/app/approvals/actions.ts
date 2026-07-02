@@ -1,8 +1,7 @@
 "use server";
+import { auth } from "@/auth";
 
 import { revalidatePath } from "next/cache";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/nextauth";
 import { prisma } from "@/lib/prisma";
 
 export interface ApprovalResult {
@@ -11,7 +10,7 @@ export interface ApprovalResult {
 }
 
 async function requireSuperadmin() {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   const role = (session?.user as { role?: string } | undefined)?.role;
   if (!session?.user || role !== "superadmin") {
     return { ok: false, error: "Only superadmin can approve or reject registrations." } as const;

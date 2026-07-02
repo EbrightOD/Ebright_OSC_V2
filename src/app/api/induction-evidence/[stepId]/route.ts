@@ -1,6 +1,5 @@
+﻿import { auth } from "@/auth";
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/nextauth";
 import { prisma } from "@/lib/prisma";
 import { streamFromDrive, mimeForName } from "@/lib/drive";
 import { canManageInductions } from "@/app/induction/roles";
@@ -24,7 +23,7 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ stepId: string }> },
 ) {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

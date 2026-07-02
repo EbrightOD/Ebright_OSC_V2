@@ -1,6 +1,5 @@
+import { auth } from "@/auth";
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/nextauth";
 import { prisma } from "@/lib/prisma";
 import { mytDateOnly, mytHour } from "@/lib/myt";
 import { getMalaysiaHoliday, isMalaysiaHoliday } from "@/lib/malaysiaHolidays";
@@ -93,7 +92,7 @@ function minutesLate(checkIn: Date, startHour: number): number {
 }
 
 export async function GET() {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.email) {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }

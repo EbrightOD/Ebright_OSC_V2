@@ -2,24 +2,49 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { Bell, Hourglass, X } from "lucide-react";
+import { Bell, Hourglass, UserPlus, X } from "lucide-react";
+
+const APPROVAL_ROLES = new Set(["superadmin"]);
+const INDUCTION_ROLES = new Set(["superadmin", "admin", "hr", "od"]);
+
+interface Counts {
+  approvals: number;
+  inductionRequests: number;
+}
 
 export default function NotificationBell({ role }: { role?: string }) {
-  const isSuperadmin = role === "superadmin";
+  const normalizedRole = (role ?? "").toLowerCase();
+  const showApprovals = APPROVAL_ROLES.has(normalizedRole);
+  const showInductionRequests = INDUCTION_ROLES.has(normalizedRole);
+  const shouldShow = showApprovals || showInductionRequests;
+
   const [open, setOpen] = useState(false);
   const [count, setCount] = useState(0);
   const [leaveCount, setLeaveCount] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!isSuperadmin) return;
+    if (!shouldShow) return;
     let cancelled = false;
     const load = async () => {
       try {
-        const res = await fetch("/api/approvals/count", { cache: "no-store" });
-        if (!res.ok) return;
-        const data = (await res.json()) as { count?: number };
-        if (!cancelled && typeof data.count === "number") setCount(data.count);
+        const [a, b] = await Promise.all([
+          showApprovals
+            ? fetch("/api/approvals/count", { cache: "no-store" }).then((r) =>
+                r.ok ? (r.json() as Promise<{ count?: number }>) : { count: 0 },
+              )
+            : Promise.resolve({ count: 0 }),
+          showInductionRequests
+            ? fetch("/api/induction-requests/count", { cache: "no-store" }).then((r) =>
+                r.ok ? (r.json() as Promise<{ count?: number }>) : { count: 0 },
+              )
+            : Promise.resolve({ count: 0 }),
+        ]);
+        if (cancelled) return;
+        setCounts({
+          approvals: typeof a.count === "number" ? a.count : 0,
+          inductionRequests: typeof b.count === "number" ? b.count : 0,
+        });
       } catch {
         // network flake — no-op
       }
@@ -30,7 +55,7 @@ export default function NotificationBell({ role }: { role?: string }) {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [isSuperadmin]);
+  }, [shouldShow, showApprovals, showInductionRequests]);
 
   useEffect(() => {
     let cancelled = false;
@@ -204,6 +229,66 @@ export default function NotificationBell({ role }: { role?: string }) {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function NotificationItem({
+  iconBg,
+  iconColor,
+  Icon,
+  title,
+  description,
+  actionHref,
+  actionLabel,
+  onDismiss,
+}: {
+  iconBg: string;
+  iconColor: string;
+  Icon: typeof Bell;
+  title: string;
+  description: string;
+  actionHref: string;
+  actionLabel: string;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="p-4">
+      <div className="flex items-start gap-3">
+        <span className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ring-1 ring-inset ${iconBg}`}>
+          <Icon className={`w-5 h-5 ${iconColor}`} aria-hidden="true" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <p className="text-sm font-semibold text-slate-900 leading-snug">{title}</p>
+            <button
+              type="button"
+              onClick={onDismiss}
+              aria-label="Dismiss"
+              className="shrink-0 -mt-0.5 -mr-1 p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+            >
+              <X className="w-4 h-4" aria-hidden="true" />
+            </button>
+          </div>
+          <p className="mt-0.5 text-sm text-slate-500 leading-snug">{description}</p>
+          <div className="mt-3 flex items-center gap-2">
+            <Link
+              href={actionHref}
+              onClick={onDismiss}
+              className="inline-flex items-center justify-center h-9 px-4 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 shadow-sm"
+            >
+              {actionLabel}
+            </Link>
+            <button
+              type="button"
+              onClick={onDismiss}
+              className="inline-flex items-center justify-center h-9 px-4 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

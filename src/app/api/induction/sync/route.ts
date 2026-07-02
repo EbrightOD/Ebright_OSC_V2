@@ -1,13 +1,12 @@
+import { auth } from "@/auth";
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/nextauth";
 import { prisma } from "@/lib/prisma";
 import { canManageInductions } from "@/app/induction/roles";
 import { syncAllFromEbrightLeads } from "@/app/induction/jobs/sync-onboarding";
 
 export async function POST() {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await auth();
     if (!session?.user?.email) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }

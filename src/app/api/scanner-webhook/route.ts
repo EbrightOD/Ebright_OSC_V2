@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { mytDateOnly, mytDayUtcBounds } from "@/lib/myt";
+import { parseScanTime } from "@/lib/scanner-sync";
 
 // Optional webhook receiver for Hikvision pushes.
 // Primary ingestion is the polling loop in `lib/scanner-sync.ts` triggered by
@@ -51,7 +52,7 @@ async function processEvent(
 
   const device = await prisma.devices.findFirst({
     where: { ip_address: ipAddress },
-    select: { device_id: true, branch_id: true },
+    select: { device_id: true, branch_id: true, tz_offset_minutes: true },
   });
   if (!device) {
     return { ok: false, reason: `no device row for ip=${ipAddress}` };
@@ -67,7 +68,9 @@ async function processEvent(
     return { ok: false, reason: `no employment for employee_id=${empNoStr}` };
   }
 
-  const scanTime = scanTimeStr ? new Date(scanTimeStr) : new Date();
+  const scanTime = scanTimeStr
+    ? parseScanTime(scanTimeStr, device.tz_offset_minutes)
+    : new Date();
   if (Number.isNaN(scanTime.getTime())) {
     return { ok: false, reason: "invalid scan time" };
   }

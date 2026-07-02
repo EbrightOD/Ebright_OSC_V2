@@ -107,6 +107,11 @@ export const WORKFLOW_TEMPLATES: Record<string, readonly WorkflowStepTemplate[]>
   Standard:               buildTemplate(DAY1_COMMON, DAY2_REGULAR_INTERN_HQ,    DAY3_STANDARD),
   ProtegeInternBranch:    buildTemplate(DAY1_COMMON, DAY2_PROTEGE_INTERN_BRANCH, DAY3_STANDARD),
   CoachPartTimer:         buildTemplate(DAY1_COMMON, DAY2_COACH_PART_TIMER,      DAY3_COACH),
+  // Coach (Full-timer): same 3-day induction shape as Part-timer; the
+  // distinguishing 3-week branch program is rendered separately on the
+  // HR candidate detail view (BranchOnboardingSection) and gated by the
+  // hasBranchOnboarding flag in induction-task-spec.ts.
+  CoachFullTimer:         buildTemplate(DAY1_COMMON, DAY2_COACH_PART_TIMER,      DAY3_COACH),
   FullTimer:              buildTemplate(DAY1_COMMON, DAY2_FULL_TIMER,            DAY3_STANDARD),
   "IT-Heavy": [
     { stepNumber: 1, title: "IT Equipment Setup",     description: "Receive laptop, phone, and other equipment.",        daysFromStart: 0 },
@@ -155,6 +160,7 @@ export const WORKFLOW_TEMPLATE_LABELS: Record<string, string> = {
   Standard:            "Regular Intern · HQ",
   ProtegeInternBranch: "Protege Intern · Branch",
   CoachPartTimer:      "Coach (Part-timer) · Branch + 3-week training",
+  CoachFullTimer:      "Coach (Full-timer) · Branch + 3-week training",
   FullTimer:           "Full-timer · HQ or Branch",
   "IT-Heavy":          "IT-Heavy (legacy)",
   Remote:              "Remote (legacy)",
@@ -172,6 +178,7 @@ const DEFAULT_DURATION_DAYS: Record<string, number> = {
   Standard:               3,   // Regular Intern · HQ
   ProtegeInternBranch:    3,
   CoachPartTimer:        21,
+  CoachFullTimer:        21,   // matches the "3-week training" label + part-timer
   FullTimer:              3,
   "IT-Heavy":             7,
   Remote:                 7,

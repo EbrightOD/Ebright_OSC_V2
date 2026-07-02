@@ -1,12 +1,17 @@
 /**
  * scanner-sync.ts
  *
- * Polls every Hikvision device in the `devices` table for today's scan events,
+ * Polls every Hikvision device in the `devices` table for new scan events,
  * then writes them into the new schema:
  *   - one row per scan into `attendance_log` (idempotent via partial unique on
  *     (device_id, scan_serial))
  *   - one row per (user_id, date) into `attendance`, with check_in / check_out
  *     derived from MIN/MAX scan_time of that day's logs
+ *
+ * Each device polls from its own high-watermark — the most recent scan_time
+ * we've already ingested for that device — so a server restart resumes from
+ * where we left off rather than only fetching "today". On a fresh DB the
+ * window starts at the MYT day boundary.
  *
  * Triggered by `instrumentation.ts` on a fixed setInterval.
  *
@@ -34,15 +39,25 @@ interface AcsResponse {
 interface DeviceRow {
   device_id: number;
   ip_address: string;
+  tz_offset_minutes: number;
 }
 
 const HIKVISION_PAGE_SIZE = 30;
 const HIKVISION_MAX_PAGES = 50; // safety guard against runaway pagination
 const HIKVISION_TIMEOUT_MS = 8000;
 
+// Re-fetch overlap when resuming from a watermark: covers same-second collisions
+// without relying on millisecond precision from the device.
+const WATERMARK_OVERLAP_MS = 60_000;
+
 // ─── Hikvision fetch ─────────────────────────────────────────────────────────
 
-async function fetchTodayEvents(device: DeviceRow): Promise<ScanEvent[]> {
+// Page through the Hikvision ISAPI for events in [startTime, endTime].
+async function fetchEventsBetween(
+  device: DeviceRow,
+  startTime: Date,
+  endTime: Date,
+): Promise<ScanEvent[]> {
   const user = process.env.HIKVISION_USER;
   const pass = process.env.HIKVISION_PASS;
   if (!user || !pass) {
@@ -54,9 +69,6 @@ async function fetchTodayEvents(device: DeviceRow): Promise<ScanEvent[]> {
 
   const url = `http://${device.ip_address}/ISAPI/AccessControl/AcsEvent?format=json`;
   const auth = `${user}:${pass}`;
-
-  const now = new Date();
-  const { start: startOfToday } = mytDayUtcBounds(now);
 
   const all: ScanEvent[] = [];
   let position = 0;
@@ -75,8 +87,8 @@ async function fetchTodayEvents(device: DeviceRow): Promise<ScanEvent[]> {
             maxResults: HIKVISION_PAGE_SIZE,
             major: 0,
             minor: 0,
-            startTime: mytIsoLocal(startOfToday),
-            endTime: mytIsoLocal(now),
+            startTime: mytIsoLocal(startTime),
+            endTime: mytIsoLocal(endTime),
           },
         },
         contentType: "application/json",
@@ -120,6 +132,19 @@ async function fetchTodayEvents(device: DeviceRow): Promise<ScanEvent[]> {
   return all;
 }
 
+// Live-poll wrapper: resume from the device's high-watermark (or today MYT
+// when there's no history) and fetch up to "now".
+async function fetchWindowEvents(
+  device: DeviceRow,
+  since: Date | null,
+): Promise<ScanEvent[]> {
+  const now = new Date();
+  const startTime = since
+    ? new Date(since.getTime() - WATERMARK_OVERLAP_MS)
+    : mytDayUtcBounds(now).start;
+  return fetchEventsBetween(device, startTime, now);
+}
+
 // ─── Scanner-time parsing ────────────────────────────────────────────────────
 
 // Hikvision sometimes returns event timestamps without an explicit timezone
@@ -128,12 +153,18 @@ async function fetchTodayEvents(device: DeviceRow): Promise<ScanEvent[]> {
 // not MYT. The scanner clock is set to MYT, so a naive timestamp is *always*
 // MYT. Anchor it explicitly to +08:00 before parsing so the absolute UTC
 // instant we store is correct regardless of where this code runs.
+//
+// `tzOffsetMinutes` is a per-device correction applied AFTER parsing — for
+// devices whose hardware clock is misconfigured (e.g. running 8h behind MYT
+// because the timezone is set to UTC) the column on `devices` carries the
+// minutes to add. 0 = no correction (default).
 const TZ_OFFSET_RX = /Z$|[+-]\d{2}:?\d{2}$/;
 
-export function parseScanTime(raw: string): Date {
+export function parseScanTime(raw: string, tzOffsetMinutes = 0): Date {
   const s = raw.trim();
-  if (TZ_OFFSET_RX.test(s)) return new Date(s);
-  return new Date(`${s}+08:00`);
+  const base = TZ_OFFSET_RX.test(s) ? new Date(s) : new Date(`${s}+08:00`);
+  if (tzOffsetMinutes === 0 || Number.isNaN(base.getTime())) return base;
+  return new Date(base.getTime() + tzOffsetMinutes * 60_000);
 }
 
 // ─── DB write ────────────────────────────────────────────────────────────────
@@ -157,7 +188,7 @@ async function writeEvent(
     return "skipped";
   }
 
-  const scanTime = parseScanTime(event.time);
+  const scanTime = parseScanTime(event.time, device.tz_offset_minutes);
   if (Number.isNaN(scanTime.getTime())) {
     console.warn(
       `[scanner-sync][${device.ip_address}] bad scan time: ${event.time}`,
@@ -267,8 +298,9 @@ async function retagScanTypesForDay(
 async function processDevice(
   device: DeviceRow,
   userIdByEmpNo: Map<string, number>,
+  watermark: Date | null,
 ): Promise<{ device: string; total: number; inserted: number; duplicate: number; skipped: number }> {
-  const events = await fetchTodayEvents(device);
+  const events = await fetchWindowEvents(device, watermark);
   const counts = { inserted: 0, duplicate: 0, skipped: 0 };
   for (const ev of events) {
     const result = await writeEvent(device, ev, userIdByEmpNo);
@@ -291,7 +323,7 @@ export async function syncScannerToDb(): Promise<void> {
   try {
     const devices = await prisma.devices.findMany({
       where: { ip_address: { not: null } },
-      select: { device_id: true, ip_address: true },
+      select: { device_id: true, ip_address: true, tz_offset_minutes: true },
     });
     if (devices.length === 0) {
       console.log("[scanner-sync] no devices with ip_address — nothing to do");
@@ -312,10 +344,31 @@ export async function syncScannerToDb(): Promise<void> {
       }
     }
 
+    // High-watermark per device: resume each device's poll from its last
+    // ingested scan. This makes a server restart non-destructive — the next
+    // cycle re-fetches everything since the last log we have, and the
+    // (device_id, scan_serial) unique constraint dedupes overlap.
+    const deviceIds = devices.map((d) => d.device_id);
+    const watermarks = deviceIds.length
+      ? await prisma.attendance_log.groupBy({
+          by: ["device_id"],
+          where: { device_id: { in: deviceIds } },
+          _max: { scan_time: true },
+        })
+      : [];
+    const watermarkByDevice = new Map<number, Date>();
+    for (const w of watermarks) {
+      if (w.device_id != null && w._max.scan_time) {
+        watermarkByDevice.set(w.device_id, w._max.scan_time);
+      }
+    }
+
     const results = await Promise.all(
       devices
         .filter((d): d is DeviceRow => d.ip_address !== null)
-        .map((d) => processDevice(d, userIdByEmpNo)),
+        .map((d) =>
+          processDevice(d, userIdByEmpNo, watermarkByDevice.get(d.device_id) ?? null),
+        ),
     );
 
     for (const r of results) {
@@ -326,8 +379,96 @@ export async function syncScannerToDb(): Promise<void> {
       }
     }
   } catch (err) {
-    console.error("[scanner-sync] cycle failed:", err);
+    // P1008 = Prisma operation timed out. On a flaky link to the remote PG
+    // server this is expected; log a one-liner instead of a 50-line stack
+    // and let the next cycle retry.
+    const code = (err as { code?: string } | null)?.code;
+    if (code === "P1008") {
+      console.warn(
+        "[scanner-sync] cycle timed out talking to PG — will retry next tick",
+      );
+    } else {
+      console.error("[scanner-sync] cycle failed:", err);
+    }
   } finally {
     running = false;
   }
+}
+
+// ─── One-shot backfill ───────────────────────────────────────────────────────
+
+export interface BackfillResult {
+  startTime: string;
+  endTime: string;
+  events: number;
+  inserted: number;
+  duplicate: number;
+  skipped: number;
+  perDevice: Array<{
+    device: string;
+    total: number;
+    inserted: number;
+    duplicate: number;
+    skipped: number;
+  }>;
+}
+
+/**
+ * Fetch and ingest scanner events for an explicit UTC time window. Uses the
+ * same writeEvent pipeline as the live poller, so it's idempotent — re-running
+ * is safe and dedupes via (device_id, scan_serial). Use this to recover days
+ * where the live poller wasn't running.
+ */
+export async function backfillRange(
+  startTime: Date,
+  endTime: Date,
+): Promise<BackfillResult> {
+  const devices = await prisma.devices.findMany({
+    where: { ip_address: { not: null } },
+    select: { device_id: true, ip_address: true, tz_offset_minutes: true },
+  });
+
+  const employments = await prisma.employment.findMany({
+    where: { employee_id: { not: null } },
+    select: { employee_id: true, user_id: true, employment_id: true },
+    orderBy: { employment_id: "desc" },
+  });
+  const userIdByEmpNo = new Map<string, number>();
+  for (const e of employments) {
+    if (e.employee_id && !userIdByEmpNo.has(e.employee_id)) {
+      userIdByEmpNo.set(e.employee_id, e.user_id);
+    }
+  }
+
+  const perDevice: BackfillResult["perDevice"] = [];
+  for (const d of devices.filter((x): x is DeviceRow => x.ip_address !== null)) {
+    const events = await fetchEventsBetween(d, startTime, endTime);
+    const counts = { inserted: 0, duplicate: 0, skipped: 0 };
+    for (const ev of events) {
+      const result = await writeEvent(d, ev, userIdByEmpNo);
+      counts[result]++;
+    }
+    console.log(
+      `[scanner-backfill][${d.ip_address}] events=${events.length} inserted=${counts.inserted} duplicate=${counts.duplicate} skipped=${counts.skipped}`,
+    );
+    perDevice.push({ device: d.ip_address, total: events.length, ...counts });
+  }
+
+  const totals = perDevice.reduce(
+    (acc, r) => {
+      acc.events += r.total;
+      acc.inserted += r.inserted;
+      acc.duplicate += r.duplicate;
+      acc.skipped += r.skipped;
+      return acc;
+    },
+    { events: 0, inserted: 0, duplicate: 0, skipped: 0 },
+  );
+
+  return {
+    startTime: startTime.toISOString(),
+    endTime: endTime.toISOString(),
+    ...totals,
+    perDevice,
+  };
 }
