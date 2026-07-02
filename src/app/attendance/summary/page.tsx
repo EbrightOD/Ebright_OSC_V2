@@ -297,7 +297,6 @@ export default async function AttendanceSummaryPage({ searchParams }: PageProps)
       })
     : [];
 
-  // Build rows: expected first, then visitors
   const expectedRows: AttendanceRow[] = employees.map((e) => {
     const att = attMap.get(e.user_id);
     const checkIn = att?.check_in ?? null;

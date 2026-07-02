@@ -15,11 +15,13 @@ export default function DonutChart({
   size = 128,
   thickness = 14,
   onSliceClick,
+  centerLabel = "TASKS",
 }: {
   data: DonutSegment[];
   size?: number;
   thickness?: number;
   onSliceClick?: (label: string) => void;
+  centerLabel?: string;
 }) {
   const total = data.reduce((s, d) => s + d.value, 0);
   const r = (size - thickness) / 2;
@@ -35,7 +37,7 @@ export default function DonutChart({
       height={size}
       viewBox={`0 0 ${size} ${size}`}
       role="img"
-      aria-label={`${total} tasks by status`}
+      aria-label={`${total} ${centerLabel.toLowerCase()} by status`}
       className="shrink-0"
     >
       <g transform={`rotate(-90 ${cx} ${cy})`}>
@@ -69,7 +71,7 @@ export default function DonutChart({
         {total}
       </text>
       <text x={cx} y={cy + size * 0.15} textAnchor="middle" dominantBaseline="middle" fontSize={size * 0.085} className="fill-slate-400" letterSpacing="0.08em">
-        TASKS
+        {centerLabel}
       </text>
     </svg>
   );

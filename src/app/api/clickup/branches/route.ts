@@ -17,7 +17,7 @@ export async function GET() {
 
   try {
     const branches = await getBranchSpaces(teamId, token);
-    return NextResponse.json({ configured: true, branches });
+    return NextResponse.json({ configured: true, items: branches });
   } catch {
     return NextResponse.json({ error: "Failed to load branches" }, { status: 502 });
   }

@@ -7,7 +7,7 @@ import LeaveRequestsView, {
   type LeaveRow,
   type LeaveStatusCounts,
 } from "@/app/components/LeaveRequestsView";
-import { HOD_POSITION, resolveLeaveRecordsAccess } from "./approval-logic";
+import { HOD_POSITION, formatLeaveDisplayId, resolveLeaveRecordsAccess } from "./approval-logic";
 import { getActiveDepartmentId, loadHodPending } from "./approval-queries";
 
 export const dynamic = "force-dynamic";
@@ -16,8 +16,7 @@ export default async function LeavePage() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) redirect("/login");
 
-  // Oversight accounts (department-role + superadmin) don't submit leave — they read
-  // the records page instead.
+
   if (
     resolveLeaveRecordsAccess({
       role: (session.user as { role?: string } | undefined)?.role ?? "",
@@ -43,13 +42,14 @@ export default async function LeavePage() {
 
   const rows: LeaveRow[] = requests.map((r) => ({
     leaveId: r.leave_id,
-    displayId: `LV-${String(r.leave_id).padStart(3, "0")}`,
+    displayId: formatLeaveDisplayId(r.leave_types.leave_type_code, r.leave_id),
     leaveTypeCode: r.leave_types.leave_type_code,
     leaveTypeName: r.leave_types.name,
     startDate: r.start_date.toISOString().slice(0, 10),
     endDate: r.end_date.toISOString().slice(0, 10),
     totalDays: Number(r.total_days),
     reason: r.reason,
+    rejectionReason: r.remarks,
     status: r.status,
     appliedAt: r.applied_at.toISOString(),
   }));
@@ -71,8 +71,7 @@ export default async function LeavePage() {
   const userPosition = (session.user as { position?: string } | undefined)?.position ?? "";
   const userName = session.user?.name ?? null;
 
-  // FT HODs can approve pending requests from their own department, surfaced as a
-  // "To Approve" tab on this page.
+ 
   const isHod = userPosition === HOD_POSITION;
   const departmentId = isHod ? await getActiveDepartmentId(me.user_id) : null;
   const approvalItems = departmentId != null ? await loadHodPending(departmentId) : [];
@@ -83,6 +82,7 @@ export default async function LeavePage() {
         rows={rows}
         counts={counts}
         canApprove={isHod}
+        viewerIsHod={isHod}
         approvalItems={approvalItems}
       />
     </AppShell>

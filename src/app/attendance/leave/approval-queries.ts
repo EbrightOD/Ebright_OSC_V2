@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { formatLeaveDisplayId } from "./approval-logic";
 
 export interface HodPendingRow {
   leaveId: number;
@@ -13,7 +14,6 @@ export interface HodPendingRow {
   appliedAt: string;
 }
 
-/** Active department id for a user, or null if they have no active employment. */
 export async function getActiveDepartmentId(userId: number): Promise<number | null> {
   const emp = await prisma.employment.findFirst({
     where: { user_id: userId, status: "active" },
@@ -29,13 +29,12 @@ const pendingWhere = (departmentId: number) => ({
   },
 });
 
-/** Pending requests in a department, for the HOD action list. */
 export async function loadHodPending(departmentId: number): Promise<HodPendingRow[]> {
   const rows = await prisma.leave_request.findMany({
     where: pendingWhere(departmentId),
     orderBy: { applied_at: "asc" },
     include: {
-      leave_types: { select: { name: true } },
+      leave_types: { select: { leave_type_code: true, name: true } },
       users_leave_request_user_idTousers: {
         select: {
           user_profile: { select: { full_name: true } },
@@ -53,7 +52,7 @@ export async function loadHodPending(departmentId: number): Promise<HodPendingRo
     const requester = r.users_leave_request_user_idTousers;
     return {
       leaveId: r.leave_id,
-      displayId: `LV-${String(r.leave_id).padStart(3, "0")}`,
+      displayId: formatLeaveDisplayId(r.leave_types.leave_type_code, r.leave_id),
       requesterName: requester.user_profile?.full_name ?? "Unknown",
       departmentName: requester.employment[0]?.department?.department_name ?? null,
       leaveTypeName: r.leave_types.name,
@@ -76,7 +75,7 @@ export async function loadHrQueue(): Promise<HodPendingRow[]> {
     where: { status: "hod_approved" },
     orderBy: { applied_at: "asc" },
     include: {
-      leave_types: { select: { name: true } },
+      leave_types: { select: { leave_type_code: true, name: true } },
       users_leave_request_user_idTousers: {
         select: {
           user_profile: { select: { full_name: true } },
@@ -94,7 +93,7 @@ export async function loadHrQueue(): Promise<HodPendingRow[]> {
     const requester = r.users_leave_request_user_idTousers;
     return {
       leaveId: r.leave_id,
-      displayId: `LV-${String(r.leave_id).padStart(3, "0")}`,
+      displayId: formatLeaveDisplayId(r.leave_types.leave_type_code, r.leave_id),
       requesterName: requester.user_profile?.full_name ?? "Unknown",
       departmentName: requester.employment[0]?.department?.department_name ?? null,
       leaveTypeName: r.leave_types.name,
@@ -111,7 +110,6 @@ export async function countHrQueue(): Promise<number> {
   return prisma.leave_request.count({ where: { status: "hod_approved" } });
 }
 
-// --- Read-only leave records (oversight views) ---------------------------------
 
 export interface LeaveRecordRow {
   leaveId: number;
@@ -122,12 +120,14 @@ export interface LeaveRecordRow {
   startDate: string;
   endDate: string;
   totalDays: number;
+  reason: string | null;
+  rejectionReason: string | null;
   status: string;
   appliedAt: string;
 }
 
 const recordInclude = {
-  leave_types: { select: { name: true } },
+  leave_types: { select: { leave_type_code: true, name: true } },
   users_leave_request_user_idTousers: {
     select: {
       user_profile: { select: { full_name: true } },
@@ -145,9 +145,11 @@ type LeaveRecordQueryRow = {
   start_date: Date;
   end_date: Date;
   total_days: unknown;
+  reason: string | null;
+  remarks: string | null;
   status: string;
   applied_at: Date;
-  leave_types: { name: string };
+  leave_types: { leave_type_code: string; name: string };
   users_leave_request_user_idTousers: {
     user_profile: { full_name: string } | null;
     employment: { department: { department_name: string } | null }[];
@@ -158,19 +160,20 @@ function toRecordRow(r: LeaveRecordQueryRow): LeaveRecordRow {
   const requester = r.users_leave_request_user_idTousers;
   return {
     leaveId: r.leave_id,
-    displayId: `LV-${String(r.leave_id).padStart(3, "0")}`,
+    displayId: formatLeaveDisplayId(r.leave_types.leave_type_code, r.leave_id),
     requesterName: requester.user_profile?.full_name ?? "Unknown",
     departmentName: requester.employment[0]?.department?.department_name ?? null,
     leaveTypeName: r.leave_types.name,
     startDate: r.start_date.toISOString().slice(0, 10),
     endDate: r.end_date.toISOString().slice(0, 10),
     totalDays: Number(r.total_days),
+    reason: r.reason,
+    rejectionReason: r.remarks,
     status: r.status,
     appliedAt: r.applied_at.toISOString(),
   };
 }
 
-/** Department id for a department name, or null if not found. */
 export async function getDepartmentIdByName(name: string): Promise<number | null> {
   const dept = await prisma.department.findFirst({
     where: { department_name: name },
@@ -179,7 +182,7 @@ export async function getDepartmentIdByName(name: string): Promise<number | null
   return dept?.department_id ?? null;
 }
 
-/** Every leave request, all statuses, newest first. */
+
 export async function loadAllLeaveRecords(): Promise<LeaveRecordRow[]> {
   const rows = await prisma.leave_request.findMany({
     orderBy: { applied_at: "desc" },
@@ -188,7 +191,7 @@ export async function loadAllLeaveRecords(): Promise<LeaveRecordRow[]> {
   return rows.map(toRecordRow);
 }
 
-/** Leave requests whose requester is in the given department, all statuses, newest first. */
+
 export async function loadDepartmentLeaveRecords(departmentId: number): Promise<LeaveRecordRow[]> {
   const rows = await prisma.leave_request.findMany({
     where: {

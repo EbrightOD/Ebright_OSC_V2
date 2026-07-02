@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Home, ChevronRight, Inbox, Hourglass } from "lucide-react";
+import LeaveDetailButton from "@/app/components/LeaveDetailButton";
 
 export interface LeaveRecordItem {
   leaveId: number;
@@ -10,6 +11,8 @@ export interface LeaveRecordItem {
   startDate: string;
   endDate: string;
   totalDays: number;
+  reason: string | null;
+  rejectionReason: string | null;
   status: string;
   appliedAt: string;
 }
@@ -267,6 +270,7 @@ export default function LeaveRecordsView({
                     <th className="text-left px-6 py-3">Days</th>
                     <th className="text-left px-6 py-3">Status</th>
                     <th className="text-left px-6 py-3">Applied</th>
+                    <th className="text-right px-6 py-3">Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -293,6 +297,23 @@ export default function LeaveRecordsView({
                           </span>
                         </td>
                         <td className="px-6 py-3 text-slate-500">{r.appliedAt.slice(0, 10)}</td>
+                        <td className="px-6 py-3 text-right">
+                          <LeaveDetailButton
+                            detail={{
+                              displayId: r.displayId,
+                              leaveTypeName: r.leaveTypeName,
+                              startDate: r.startDate,
+                              endDate: r.endDate,
+                              totalDays: r.totalDays,
+                              status: r.status,
+                              appliedAt: r.appliedAt,
+                              reason: r.reason,
+                              rejectionReason: r.rejectionReason,
+                              requesterName: r.requesterName,
+                              departmentName: r.departmentName,
+                            }}
+                          />
+                        </td>
                       </tr>
                     );
                   })}

@@ -6,7 +6,13 @@ import { authOptions } from "@/lib/nextauth";
 import { prisma } from "@/lib/prisma";
 import { uploadToDrive } from "@/lib/drive";
 import path from "node:path";
-import { resolveLeaveAction, nextStatusForApproval, validateRejectionReason } from "./approval-logic";
+import {
+  resolveLeaveAction,
+  nextStatusForApproval,
+  validateRejectionReason,
+  HOD_POSITION,
+  HOD_APPROVED_STATUS,
+} from "./approval-logic";
 import { getActiveDepartmentId } from "./approval-queries";
 
 const ALLOWED_EXTS = new Set([".pdf", ".jpg", ".jpeg", ".png"]);
@@ -78,8 +84,16 @@ export async function submitLeaveRequest(
   if (endDate < startDate) {
     return { ok: false, error: "End date cannot be before start date." };
   }
+  
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const startDay = new Date(startDate);
+  startDay.setHours(0, 0, 0, 0);
+  if (startDay < today) {
+    return { ok: false, error: "Leave cannot start on a past date." };
+  }
 
-  // Half day is only valid for a single-day request (start and end on the same day).
+  
   const halfDay = s(formData, "half_day") === "1";
   if (halfDay && startStr !== endStr) {
     return { ok: false, error: "Half day is only allowed for a single-day request." };
@@ -88,6 +102,10 @@ export async function submitLeaveRequest(
   const totalDays = halfDay ? 0.5 : daysInclusive(startDate, endDate);
 
   const reason = s(formData, "reason") || null;
+
+
+  const position = (session.user as { position?: string | null }).position ?? null;
+  const initialStatus = position === HOD_POSITION ? HOD_APPROVED_STATUS : "pending";
 
   let attachmentId: string | null = null;
   const fileField = formData.get("attachment_file");
@@ -108,7 +126,7 @@ export async function submitLeaveRequest(
       total_days: totalDays,
       reason,
       attachment: attachmentId,
-      status: "pending",
+      status: initialStatus,
     },
     select: { leave_id: true, total_days: true },
   });
@@ -127,7 +145,6 @@ export interface ApprovalActionResult {
   error?: string;
 }
 
-/** Resolve the acting user + position + email + active department from the session. */
 async function resolveActor(): Promise<
   | { ok: true; userId: number; position: string | null; email: string; departmentId: number | null }
   | { ok: false; error: string }

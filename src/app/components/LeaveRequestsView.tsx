@@ -9,10 +9,10 @@ import {
   Plus,
   Umbrella,
   Inbox,
-  Eye,
   Hourglass,
 } from "lucide-react";
 import HodApprovalTable, { type HodApprovalItem } from "@/app/components/HodApprovalTable";
+import LeaveDetailButton from "@/app/components/LeaveDetailButton";
 
 export interface LeaveRow {
   leaveId: number;
@@ -23,6 +23,7 @@ export interface LeaveRow {
   endDate: string;
   totalDays: number;
   reason: string | null;
+  rejectionReason: string | null;
   status: string;
   appliedAt: string;
 }
@@ -115,13 +116,19 @@ export default function LeaveRequestsView({
   rows = [],
   counts,
   canApprove = false,
+  viewerIsHod = false,
   approvalItems = [],
 }: {
   rows?: LeaveRow[];
   counts?: LeaveStatusCounts;
   canApprove?: boolean;
+  viewerIsHod?: boolean;
   approvalItems?: HodApprovalItem[];
 }) {
+  // A HOD's own request skips the HOD stage and goes straight to HR, so the
+  // "HOD Approved" state never reflects a real HOD approval for them — show it
+  // as awaiting HR instead.
+  const hodApprovedLabel = viewerIsHod ? "Awaiting HR" : "HOD Approved";
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
@@ -265,7 +272,9 @@ export default function LeaveRequestsView({
                     style={{ backgroundColor: s.color }}
                     aria-hidden="true"
                   />
-                  <span className="text-slate-600">{s.label}</span>
+                  <span className="text-slate-600">
+                    {s.key === "hod_approved" ? hodApprovedLabel : s.label}
+                  </span>
                   <span className="ml-auto font-semibold text-slate-900 tabular-nums">
                     {displayCounts[s.key]}
                   </span>
@@ -294,7 +303,9 @@ export default function LeaveRequestsView({
                     <div className="flex items-center gap-2">
                       <span className={`w-2 h-2 rounded-full ${card.dot}`} aria-hidden="true" />
                       <p className="text-[11px] font-semibold tracking-widest text-slate-500">
-                        {card.label}
+                        {card.key === "hod_approved"
+                          ? hodApprovedLabel.toUpperCase()
+                          : card.label}
                       </p>
                     </div>
                     <p className={`mt-2 text-3xl font-bold ${card.text}`}>{value}</p>
@@ -427,12 +438,16 @@ export default function LeaveRequestsView({
                   </tr>
                 ) : (
                   filtered.map((r) => {
-                    const badge = STATUS_BADGE[r.status] ?? {
+                    const baseBadge = STATUS_BADGE[r.status] ?? {
                       bg: "#F1F5F9",
                       text: "#334155",
                       dot: "#64748B",
                       label: r.status,
                     };
+                    const badge =
+                      r.status === "hod_approved"
+                        ? { ...baseBadge, label: hodApprovedLabel }
+                        : baseBadge;
                     return (
                       <tr
                         key={r.leaveId}
@@ -471,13 +486,19 @@ export default function LeaveRequestsView({
                           </span>
                         </td>
                         <td className="px-6 py-4 text-right">
-                          <Link
-                            href={`/attendance/leave/${r.leaveId}`}
-                            aria-label={`View ${r.displayId}`}
-                            className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
-                          >
-                            <Eye className="w-4 h-4" aria-hidden="true" />
-                          </Link>
+                          <LeaveDetailButton
+                            detail={{
+                              displayId: r.displayId,
+                              leaveTypeName: r.leaveTypeName,
+                              startDate: r.startDate,
+                              endDate: r.endDate,
+                              totalDays: r.totalDays,
+                              status: r.status,
+                              appliedAt: r.appliedAt,
+                              reason: r.reason,
+                              rejectionReason: r.rejectionReason,
+                            }}
+                          />
                         </td>
                       </tr>
                     );
