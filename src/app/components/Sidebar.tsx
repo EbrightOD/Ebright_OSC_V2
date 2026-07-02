@@ -14,6 +14,7 @@ import {
   GraduationCap,
   CalendarCheck,
   ShieldCheck,
+  ListChecks,
 } from "lucide-react";
 
 type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
@@ -33,6 +34,7 @@ const primaryNav: NavItem[] = [
   { name: "SMS", href: "/dashboards/sms", Icon: MessageSquare },
   { name: "Inventory", href: "/dashboards/inventory", Icon: Package },
   { name: "Academy", href: "/academy", Icon: GraduationCap },
+  { name: "ClickUp Tasks", href: "/clickup-dashboard", Icon: ListChecks },
 ];
 
 const secondaryNav: NavItem[] = [

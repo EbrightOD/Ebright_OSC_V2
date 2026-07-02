@@ -41,6 +41,17 @@ function daysInclusive(start: string, end: string): number {
   return Math.round((e.getTime() - s.getTime()) / 86400000) + 1;
 }
 
+function formatDays(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
+// Today's date as YYYY-MM-DD in local time — used as the earliest selectable leave date.
+function todayISO(): string {
+  const d = new Date();
+  const tz = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - tz).toISOString().slice(0, 10);
+}
+
 export default function LeaveFormView({
   leaveTypes,
 }: {
@@ -48,11 +59,13 @@ export default function LeaveFormView({
 }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
+  const minDate = useMemo(() => todayISO(), []);
 
   const [leaveTypeId, setLeaveTypeId] = useState<string>("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [reason, setReason] = useState("");
+  const [halfDay, setHalfDay] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -60,13 +73,20 @@ export default function LeaveFormView({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  const totalDays = useMemo(
-    () => daysInclusive(startDate, endDate),
-    [startDate, endDate],
-  );
+  // Half day only applies to a single-day request (From and To are the same day).
+  const isSingleDay = !!startDate && !!endDate && startDate === endDate;
+  const halfDayActive = halfDay && isSingleDay;
+
+  const totalDays = useMemo(() => {
+    if (halfDayActive) return 0.5;
+    return daysInclusive(startDate, endDate);
+  }, [startDate, endDate, halfDayActive]);
 
   const dateRangeValid =
-    !!startDate && !!endDate && new Date(endDate) >= new Date(startDate);
+    !!startDate &&
+    !!endDate &&
+    startDate >= minDate &&
+    new Date(endDate) >= new Date(startDate);
   const canSubmit = !!leaveTypeId && dateRangeValid;
 
   const selectedTypeName = useMemo(
@@ -91,6 +111,7 @@ export default function LeaveFormView({
     fd.append("start_date", startDate);
     fd.append("end_date", endDate);
     fd.append("reason", reason);
+    if (halfDayActive) fd.append("half_day", "1");
     if (file) fd.append("attachment_file", file);
 
     startTransition(async () => {
@@ -118,6 +139,7 @@ export default function LeaveFormView({
           setStartDate("");
           setEndDate("");
           setReason("");
+          setHalfDay(false);
           setFile(null);
           setErrorMsg(null);
         }}
@@ -303,6 +325,7 @@ export default function LeaveFormView({
                   type="date"
                   required
                   value={startDate}
+                  min={minDate}
                   onChange={(e) => setStartDate(e.target.value)}
                   style={inputStyle}
                   onFocus={handleFocus}
@@ -319,7 +342,7 @@ export default function LeaveFormView({
                   type="date"
                   required
                   value={endDate}
-                  min={startDate || undefined}
+                  min={startDate || minDate}
                   onChange={(e) => setEndDate(e.target.value)}
                   style={inputStyle}
                   onFocus={handleFocus}
@@ -327,6 +350,38 @@ export default function LeaveFormView({
                 />
               </FieldBlock>
             </div>
+
+            {/* Half day toggle — only for a single-day request */}
+            {isSingleDay && (
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
+                  borderRadius: "12px",
+                  padding: "14px 16px",
+                  border: `1px solid ${halfDay ? ACCENT_BORDER : "#E5E7EB"}`,
+                  backgroundColor: halfDay ? ACCENT_SOFT : "#fff",
+                  cursor: "pointer",
+                  transition: "background-color 0.15s, border-color 0.15s",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={halfDay}
+                  onChange={(e) => setHalfDay(e.target.checked)}
+                  style={{ width: "18px", height: "18px", accentColor: ACCENT, cursor: "pointer" }}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontSize: "13.5px", fontWeight: 600, color: "#262626" }}>
+                    Half day
+                  </p>
+                  <p style={{ fontSize: "12px", color: "#737373", marginTop: "2px" }}>
+                    Apply for half a day (0.5) on this date.
+                  </p>
+                </div>
+              </label>
+            )}
 
             {/* Total days preview */}
             <div
@@ -354,9 +409,11 @@ export default function LeaveFormView({
                   Total Days
                 </p>
                 <p style={{ fontSize: "13px", color: ACCENT_TEXT }}>
-                  {dateRangeValid
-                    ? "Inclusive of start and end date"
-                    : "Select a valid date range to calculate"}
+                  {!dateRangeValid
+                    ? "Select a valid date range to calculate"
+                    : halfDayActive
+                      ? "Half day on the selected date"
+                      : "Inclusive of start and end date"}
                 </p>
               </div>
               <div
@@ -367,7 +424,7 @@ export default function LeaveFormView({
                   tabSize: "2",
                 }}
               >
-                {totalDays}
+                {formatDays(totalDays)}
                 <span style={{ fontSize: "13px", fontWeight: 600, marginLeft: "6px" }}>
                   {totalDays === 1 ? "day" : "days"}
                 </span>
@@ -822,7 +879,7 @@ function SuccessScreen({
           </span>{" "}
           of{" "}
           <span style={{ fontWeight: 600, color: "#262626" }}>
-            {days} {days === 1 ? "day" : "days"}
+            {formatDays(days)} {days === 1 ? "day" : "days"}
           </span>{" "}
           from{" "}
           <span style={{ fontWeight: 600, color: "#262626" }}>{fmt(startDate)}</span>{" "}

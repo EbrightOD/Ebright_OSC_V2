@@ -14,12 +14,10 @@ import AttendanceReportView, {
 
 export const dynamic = "force-dynamic";
 
-// Roles that appear on the attendance report (raw role_id values from `role` table).
 const REPORT_ROLE_IDS = [2, 4];
-// Staff (role_id = 4) can open the page but only ever see their own attendance.
 const STAFF_ROLE_ID = 4;
 
-// Company convention: Sunday and Monday are off days
+
 const WEEKEND_DAY_NUMBERS = new Set([0, 1]);
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const TIME_FMT = new Intl.DateTimeFormat("en-GB", {
@@ -101,9 +99,9 @@ export default async function AttendanceReportPage({ searchParams }: PageProps) 
     return an.localeCompare(bn);
   });
 
-  // Staff can never override the filter — only their own row is in scope.
+ 
   const branchFilter = restrictToSelf ? "" : (sp.branch ?? "");
-  // Department filter only applies when branch is HQ (HQ employees are split by department).
+  
   const deptFilter =
     !restrictToSelf && branchFilter === "HQ" ? (sp.dept ?? "") : "";
   const employeesForDropdown = restrictToSelf
@@ -120,8 +118,7 @@ export default async function AttendanceReportPage({ searchParams }: PageProps) 
     branchCode: e.employment[0]?.branch?.branch_code ?? null,
   }));
 
-  // Resolve selected employee — staff are pinned to themselves; others fall back
-  // to first option, then current user.
+  
   let selectedId: number;
   if (restrictToSelf) {
     selectedId = me.user_id;
@@ -136,14 +133,13 @@ export default async function AttendanceReportPage({ searchParams }: PageProps) 
   }
   const selected = employeesSorted.find((e) => e.user_id === selectedId) ?? null;
 
-  // Resolve month — default to current month in MYT
+  
   const nowMyt = new Date(
     new Date().toLocaleString("en-US", { timeZone: "Asia/Kuala_Lumpur" }),
   );
   const defaultMonth = `${nowMyt.getFullYear()}-${String(nowMyt.getMonth() + 1).padStart(2, "0")}`;
 
-  // Optional single-day filter (?date=YYYY-MM-DD). When valid, narrows the
-  // report to that one day and aligns `monthStr` to its month.
+
   let dateStr = "";
   if (sp.date && /^\d{4}-\d{2}-\d{2}$/.test(sp.date)) {
     const probe = new Date(sp.date + "T00:00:00Z");
@@ -159,8 +155,6 @@ export default async function AttendanceReportPage({ searchParams }: PageProps) 
       : defaultMonth;
   const [year, month] = monthStr.split("-").map(Number);
 
-  // Iteration window for row generation: a single day if `dateStr` is set,
-  // otherwise the whole month.
   const lastDayOfMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
   const startDay   = dateStr ? Number(dateStr.slice(8, 10)) : 1;
   const endDay     = dateStr ? Number(dateStr.slice(8, 10)) : lastDayOfMonth;
@@ -245,7 +239,7 @@ export default async function AttendanceReportPage({ searchParams }: PageProps) 
     name: b.branch_name,
   }));
 
-  // HQ-only department options derived from active staff actually assigned to HQ + a dept.
+
   const hqDeptCodes = new Set<string>();
   for (const u of employeesSorted) {
     const emp = u.employment[0];
