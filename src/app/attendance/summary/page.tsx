@@ -412,24 +412,36 @@ export default async function AttendanceSummaryPage({ searchParams }: PageProps)
     }
   }
 
-  // ── Expected rows (scheduled today, in scope) ────────────────────────────
-  const scheduledEmpNos = new Set<string>();
-  const expectedRows: AttendanceRow[] = scheduledStaff.map(({ staff: s, schedule: sched, branchForDay }) => {
-    if (s.employeeId) scheduledEmpNos.add(s.employeeId);
-    const scan = s.employeeId ? scanByEmpNo.get(s.employeeId) ?? null : null;
+  const visitors = visitorIds.length
+    ? await prisma.users.findMany({
+        where: { user_id: { in: visitorIds } },
+        select: {
+          user_id: true,
+          role_id: true,
+          user_profile: { select: { full_name: true } },
+          employment: {
+            take: 1,
+            orderBy: { employment_id: "desc" },
+            select: {
+              employee_id: true,
+              position: true,
+              department: { select: { department_name: true } },
+              branch: { select: { branch_name: true, branch_code: true } },
+            },
+          },
+        },
+      })
+    : [];
 
-    const checkInDate = scan?.first_event ?? null;
-    // Check-out must be strictly later than check-in AND at/after the
-    // CHECKOUT_EARLIEST_MYT cutoff. Earlier "second scans" are duplicates.
-    const checkOutDate =
-      scan
-      && scan.last_event.getTime() > scan.first_event.getTime()
-      && utcToMytHm(scan.last_event) >= CHECKOUT_EARLIEST_MYT
-        ? scan.last_event
-        : null;
+  const expectedRows: AttendanceRow[] = employees.map((e) => {
+    const att = attMap.get(e.user_id);
+    const checkIn = att?.check_in ?? null;
+    const checkOut = att?.check_out ?? null;
 
-    const inStatus: AttendanceRow["in_status"] = checkInDate
-      ? classifyLate(utcToMytHm(checkInDate), sched.start, LATE_GRACE_MINUTES)
+    const inStatus: AttendanceRow["in_status"] = checkIn
+      ? mytHour(checkIn) >= LATE_HOUR_MYT
+        ? "late"
+        : "on_time"
       : null;
     const outStatus: AttendanceRow["out_status"] = checkOutDate
       ? classifyEarly(utcToMytHm(checkOutDate), sched.end)

@@ -15,9 +15,7 @@ import {
   GraduationCap,
   CalendarCheck,
   ShieldCheck,
-  ChevronDown,
-  Calculator,
-  ClipboardList,
+  ListChecks,
 } from "lucide-react";
 
 type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
@@ -76,30 +74,7 @@ const primaryNav: NavItem[] = [
     external: true,
   },
   { name: "Academy", href: "/academy", Icon: GraduationCap },
-  {
-    name: "FA System",
-    Icon: Calculator,
-    children: [
-      { name: "Events", href: "/dashboards/fa/events" },
-      { name: "Inventory", href: "/dashboards/fa/inventory" },
-      { name: "Student List", href: "/dashboards/fa/student-list" },
-      { name: "Reports", href: "/dashboards/fa/reports" },
-      { name: "Attendance", href: "/dashboards/fa/attendance" },
-      { name: "Dashboard", href: "/dashboards/fa", exact: true },
-    ],
-  },
-  {
-    name: "PCM System",
-    Icon: ClipboardList,
-    children: [
-      { name: "Events", href: "/dashboards/pcm/events" },
-      { name: "Student List", href: "/dashboards/pcm/student-list" },
-      { name: "Invitations", href: "/dashboards/pcm/invitations" },
-      { name: "Reports", href: "/dashboards/pcm/reports" },
-      { name: "Attendance", href: "/dashboards/pcm/attendance" },
-      { name: "Dashboard", href: "/dashboards/pcm", exact: true },
-    ],
-  },
+  { name: "ClickUp Tasks", href: "/clickup-dashboard", Icon: ListChecks },
 ];
 
 const secondaryNav: NavItem[] = [
